@@ -33,9 +33,11 @@ Upscaling large archival video libraries to 4K using neural filters (`iris-3`, `
 
 ## Key Architectural Features
 
-- **Zero-NAND Volatile DRAM Staging:**
+- **Zero-NAND Volatile DRAM Staging & Phase-1 Container Conditioning:**
+  - **Why Phase-1 Conditioning (`HandBrakeCLI` / `ffmpeg` in `hb_tmp`) Matters:** Legacy archival clips (`.avi`, `.wmv`, `.mkv`, `.ts`, or old camera `.mp4`/`.mov` files with non-monotonic PTS/DTS timestamps, variable framerates, or `pcm_alaw` / `pcm_mulaw` / `adpcm_ima_wav` audio) frequently cause Topaz's custom `tvai_up` pipeline to crash mid-render, drop audio tracks, or hang at 99%.
+  - **Automatic In-DRAM Repair (`hb_tmp`):** Before invoking `tvai_up`, each worker inspects the input stream via `ffprobe`. Clean `.mp4`/`.mov`/`.m4v` clips take a `0ms` zero-copy fast path (`mv` inside DRAM), while legacy containers or incompatible audio codecs are automatically conditioned in volatile DRAM (`hb_tmp` at `CRF 16`, `yuv420p`, `AAC 192k`) so Topaz receives a 100% compliant stream.
   - **macOS (`TopazMacWorker`):** Automatically mounts a volatile HFS+ RAMDisk at `/Volumes/TopazRAM` (`hdiutil attach -nomount ram://...`) and securely wipes (`rm -P`) every job upon completion. Zero writes touch the internal Apple SSD.
-  - **Linux & WSL2 (`TopazLinuxWorker`):** Stages raw inputs, audio/container conditioning (`hb_tmp`), and 4K NVENC outputs exclusively in `/dev/shm` (POSIX shared memory DRAM).
+  - **Linux & WSL2 (`TopazLinuxWorker`):** Stages raw inputs, Phase-1 audio/container conditioning (`hb_tmp`), and 4K NVENC outputs exclusively in `/dev/shm` (POSIX shared memory DRAM).
   - **Windows (`TopazWindowsWorker`):** Reads and writes directly against WSL2 `/dev/shm` exposed over zero-copy local UNC paths (`\\wsl.localhost\<Distro>\dev\shm\...`).
 - **Native Aspect-Ratio 4K Scaling (Zero Stretching, Zero Cropping):**
   - Automatically probes source dimensions (`width x height`) per clip and computes even-integer 4K bounding coordinates (`3840x2160` landscape or `2160x3840` portrait/square) with `setsar=1:1` and `flags=lanczos`.
@@ -98,9 +100,12 @@ Because setting up distributed GPU video upscaling can range from a single Mac t
 Ideal if you have one or more Apple Silicon Macs (`Mac Mini M4`, `Mac Studio`, `MacBook Pro M1/M2/M3/M4 Max`) and want a clean, silent, low-power 4K upscaling pipeline with **zero SSD wear**.
 
 #### Prerequisites (macOS)
-1. Install **Topaz Video AI** (or **Topaz Video**) into `/Applications/Topaz Video.app` (or `/Applications/Topaz Video AI.app`) and sign in to activate your license and download the `iris-3` model weights.
+1. Install **Topaz Video AI** (or **Topaz Video**) into `/Applications/Topaz Video.app` (or `/Applications/Topaz Video AI.app`) and sign in via the GUI to activate your license and download the `iris-3` model weights.
 2. Enable **Remote Login (SSH)** on your Mac(s) (`System Settings -> General -> Sharing -> Remote Login`) and configure passwordless SSH keys (`ssh-copy-id <USER>@<MAC_HOST>`).
-3. Ensure `ffmpeg` and `ffprobe` (via Homebrew: `brew install ffmpeg`) are available on the orchestrator host.
+3. Install `ffmpeg` (for `ffprobe` stream inspection and `hb_tmp` container conditioning) and `handbrake` (`HandBrakeCLI` for repairing legacy `.avi`/`.mkv`/bad-PTS archival containers in DRAM) via Homebrew:
+   ```bash
+   brew install ffmpeg handbrake
+   ```
 
 #### macOS Configuration (`config/cluster_config.local.yaml`)
 ```yaml
@@ -146,11 +151,11 @@ Ideal if you want to combine Linux NVIDIA servers (`RTX 4060/4070/4090/5080`, `T
 
 Topaz Labs provides Linux `.deb` builds (installed under `/opt/TopazVideoAIBETA`) for licensed users. You can either install the `.deb` system-wide or extract it into a user-space directory:
 
-1. **Prerequisites on Ubuntu (22.04 / 24.04 / 26.04 LTS):**
-   Ensure proprietary/open NVIDIA drivers with NVENC & TensorRT support (`nvidia-driver-570` / `580` / `615+`), Vulkan ICD loaders, and `ffmpeg` are installed:
+1. **Prerequisites on Ubuntu (22.04 / 24.04 / 26.04 LTS) & WSL2:**
+   Ensure proprietary/open NVIDIA drivers with NVENC & TensorRT support (`nvidia-driver-570` / `580` / `615+`), Vulkan ICD loaders, `ffmpeg`, and `handbrake-cli` (for Phase-1 in-DRAM container/timestamp repair of legacy `.avi`/`.mkv` sources) are installed:
    ```bash
    sudo apt update
-   sudo apt install -y ffmpeg libvulkan1 mesa-vulkan-drivers
+   sudo apt install -y ffmpeg handbrake-cli libvulkan1 mesa-vulkan-drivers
    nvidia-smi
    ```
 
@@ -174,36 +179,36 @@ Topaz Labs provides Linux `.deb` builds (installed under `/opt/TopazVideoAIBETA`
    - `ffmpeg_path: "/home/<USER>/topaz_linux/opt/TopazVideoAIBETA/bin/ffmpeg"`
    - `model_dir: "/home/<USER>/topaz_linux/opt/TopazVideoAIBETA/models"`
 
-4. **Headless OAuth Authentication (`auth.tpz` Transfer) & Model Weights on Linux / WSL2:**
-   Because headless Linux servers and WSL2 distributions do not run a desktop GUI browser to catch the OAuth2 redirect callback, `ffmpeg` will fail with an unauthenticated filter error unless a valid `auth.tpz` OAuth token is present inside `$TVAI_MODEL_DATA_DIR` (`/opt/TopazVideoAIBETA/models/auth.tpz`).
+4. **Activating Your License on Linux / WSL2 (GUI Login, Pre-Activated `.deb` Tree, or OAuth `auth.tpz` Transfer):**
+   Topaz Video AI stores its active OAuth seat credential in `auth.tpz` inside the `models/` directory (`$TVAI_MODEL_DATA_DIR/auth.tpz`). Depending on how you deploy the Linux `.deb` beta, you have three ways to activate a node:
 
-   You can authenticate a licensed headless Linux or WSL2 node using **either** of two methods:
+   - **Option 1 — Direct GUI Login (or Cloning an Already-Activated `topaz_linux/` Directory):**
+     - If your Linux machine has a desktop session (or Remote Desktop / VNC), you can launch the bundled Qt GUI (`/opt/TopazVideoAIBETA/bin/Topaz\ Video\ AI\ BETA`) and sign in directly in your browser.
+     - **Portable Activated Tree:** Once `models/auth.tpz` and your `.tz` model weights are active inside `~/topaz_linux/opt/TopazVideoAIBETA/models/`, you can `rsync` or `scp` that entire `~/topaz_linux` directory to additional Linux or WSL2 nodes on your LAN and the license key remains **immediately active** with no further login required.
 
-   - **Method A — OAuth Token Transfer (`auth.tpz`) from an Authenticated GUI Workstation *(Recommended for Headless / WSL2)*:**
-     1. Sign in to the **Topaz Video AI** desktop application on your primary licensed **Windows** or **macOS** workstation so it completes the browser OAuth2 handshake and writes `auth.tpz`.
-     2. Locate `auth.tpz` (and your downloaded `.tz` / `.json` model files) on your GUI machine:
-        - **macOS:** `/Applications/Topaz Video.app/Contents/Resources/models/auth.tpz` *(or `/Applications/Topaz Video AI.app/Contents/Resources/models/auth.tpz`)*
-        - **Windows:** `C:\ProgramData\Topaz Labs LLC\Topaz Video\models\auth.tpz` *(or `C:\ProgramData\Topaz Labs LLC\Topaz Video AI\models\auth.tpz`)*
-     3. Copy `auth.tpz` (and any needed `.tz` / `.json` model weights such as `iris-3.json` and `iris-v3-*.tz`) over SSH (`scp` / `rsync`) into the Linux node's `models/` directory and restrict its permissions:
-        ```bash
-        # Copy OAuth token and model weights from your licensed workstation to the headless Linux node:
-        scp "/Applications/Topaz Video.app/Contents/Resources/models/auth.tpz" <USER>@<LINUX_HOST>:/opt/TopazVideoAIBETA/models/auth.tpz
-        ssh <USER>@<LINUX_HOST> "chmod 600 /opt/TopazVideoAIBETA/models/auth.tpz"
-        ```
-     *(If running inside WSL2 on the same Windows workstation, you can copy directly from `/mnt/c/ProgramData/Topaz Labs LLC/Topaz Video/models/auth.tpz` into your WSL2 `models/` directory.)*
+   - **Option 2 — OAuth Token Transfer (`auth.tpz`) from a macOS or Windows GUI Install *(Best for Fresh Headless `.deb` Installs)*:**
+     - If you extract a fresh `.deb` onto a headless Linux server or WSL2 instance without a GUI browser (or if the older `.deb` beta browser callback fails to redirect), simply sign in once on your primary **macOS** or **Windows** GUI workstation and copy its active `auth.tpz` token (plus `.tz` / `.json` model files) into the Linux `models/` directory:
+       - **macOS Source:** `/Applications/Topaz Video.app/Contents/Resources/models/auth.tpz` *(or `/Applications/Topaz Video AI.app/Contents/Resources/models/auth.tpz`)*
+       - **Windows Source:** `C:\ProgramData\Topaz Labs LLC\Topaz Video\models\auth.tpz` *(or `C:\ProgramData\Topaz Labs LLC\Topaz Video AI\models\auth.tpz`)*
+       ```bash
+       # Copy active OAuth token from your licensed GUI machine to the Linux node:
+       scp "/Applications/Topaz Video.app/Contents/Resources/models/auth.tpz" <USER>@<LINUX_HOST>:/opt/TopazVideoAIBETA/models/auth.tpz
+       ssh <USER>@<LINUX_HOST> "chmod 600 /opt/TopazVideoAIBETA/models/auth.tpz"
+       ```
+       *(Inside WSL2 on the same Windows workstation, you can copy directly from `/mnt/c/ProgramData/Topaz Labs LLC/Topaz Video/models/auth.tpz`.)*
 
-   - **Method B — Headless CLI OAuth Device Flow (`bin/login`):**
-     Run the bundled `login` binary on the Linux host, open the printed OAuth URL in any browser on your laptop, and complete sign-in:
-     ```bash
-     export LD_LIBRARY_PATH="/opt/TopazVideoAIBETA/lib"
-     export TVAI_MODEL_DIR="/opt/TopazVideoAIBETA/models"
-     export TVAI_MODEL_DATA_DIR="/opt/TopazVideoAIBETA/models"
-     /opt/TopazVideoAIBETA/bin/login
-     ```
+   - **Option 3 — Headless CLI OAuth Device Flow (`bin/login`):**
+     - Run the bundled `login` binary on the Linux host, open the printed OAuth URL in any browser, and complete sign-in:
+       ```bash
+       export LD_LIBRARY_PATH="/opt/TopazVideoAIBETA/lib"
+       export TVAI_MODEL_DIR="/opt/TopazVideoAIBETA/models"
+       export TVAI_MODEL_DATA_DIR="/opt/TopazVideoAIBETA/models"
+       /opt/TopazVideoAIBETA/bin/login
+       ```
 
    > [!WARNING]
    > **License & OAuth Token Security:**
-   > Your `auth.tpz` file contains your personal Topaz Labs OAuth session token. Only transfer `auth.tpz` to headless/WSL2 environments covered by your active Topaz Labs seat or Pro license agreement, keep file permissions restricted (`chmod 600`), and **never** commit `auth.tpz` or `.tz` weights to any Git repository.
+   > Your `auth.tpz` file contains your personal Topaz Labs OAuth session token. Only transfer `auth.tpz` or pre-activated directories to nodes covered by your active Topaz Labs seat or Pro license agreement, keep file permissions restricted (`chmod 600`), and **never** commit `auth.tpz` or `.tz` weights to any Git repository.
 
 5. **Headless Vulkan ICD & EGL Vendor Library Configuration (No X11/Wayland Required):**
    `TopazLinuxWorker` automatically exports `TVAI_MODEL_DIR`, `TVAI_MODEL_DATA_DIR`, `LD_LIBRARY_PATH`, `VK_ICD_FILENAMES`, and `__EGL_VENDOR_LIBRARY_FILENAMES`. To verify manually that the Linux Topaz `ffmpeg` binary loads its shared libraries and registers `tvai_up`:

@@ -1,6 +1,7 @@
 """Linux Worker implementation for Native Linux CUDA / TensorRT Topaz Video AI nodes."""
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -67,17 +68,28 @@ class TopazLinuxWorker(BaseWorker):
         else:
             hb_env = os.environ.copy()
             hb_env["TMPDIR"] = str(self.hb_dir)
-            hb_res = subprocess.run(
-                [
+            if ext in (".avi", ".wmv", ".ts") and shutil.which("HandBrakeCLI"):
+                hb_cmd = [
+                    "nice", "-n", "15", "HandBrakeCLI",
+                    "-i", str(raw_shm),
+                    "-o", str(active_in),
+                    "-f", "av_mp4", "-e", "x264", "-q", "16", "--cfr",
+                    "-E", "av_aac", "-B", "192",
+                ]
+            else:
+                hb_cmd = [
                     "nice", "-n", "15", "ffmpeg", "-hide_banner", "-nostdin", "-y",
                     "-i", str(raw_shm),
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k",
                     str(active_in),
-                ],
+                ]
+            hb_res = subprocess.run(
+                hb_cmd,
                 env=hb_env,
                 capture_output=True,
                 text=True,
+                errors="replace",
                 check=False,
             )
             raw_shm.unlink(missing_ok=True)

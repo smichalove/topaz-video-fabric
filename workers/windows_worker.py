@@ -6,6 +6,7 @@ Supports both local WSL-shared DRAM (UNC paths) and remote Windows Server VMs (D
 
 import base64
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -64,17 +65,28 @@ class TopazWindowsWorker(BaseWorker):
         else:
             hb_env = os.environ.copy()
             hb_env["TMPDIR"] = str(self.local_hb_dir)
-            hb_res = subprocess.run(
-                [
+            if ext in (".avi", ".wmv", ".ts") and shutil.which("HandBrakeCLI"):
+                hb_cmd = [
+                    "nice", "-n", "15", "HandBrakeCLI",
+                    "-i", str(raw_path),
+                    "-o", str(repaired_path),
+                    "-f", "av_mp4", "-e", "x264", "-q", "16", "--cfr",
+                    "-E", "av_aac", "-B", "192",
+                ]
+            else:
+                hb_cmd = [
                     "nice", "-n", "15", "ffmpeg", "-hide_banner", "-nostdin", "-y",
                     "-i", str(raw_path),
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k",
                     str(repaired_path),
-                ],
+                ]
+            hb_res = subprocess.run(
+                hb_cmd,
                 env=hb_env,
                 capture_output=True,
                 text=True,
+                errors="replace",
                 check=False,
             )
             raw_path.unlink(missing_ok=True)
@@ -142,7 +154,11 @@ fi
 
 if [[ "$NEED_HB" == "1" ]]; then
     export TMPDIR="{self.wsl_shm_dir}/hb_tmp" TEMP="{self.wsl_shm_dir}/hb_tmp" TMP="{self.wsl_shm_dir}/hb_tmp"
-    nice -n 10 ffmpeg -hide_banner -nostdin -y -i "{self.wsl_shm_dir}/raw_in{ext}" -c:v libx264 -preset veryfast -crf 16 -pix_fmt yuv420p -c:a aac -b:a 192k "{self.wsl_shm_dir}/active_in.mp4" >/dev/null 2>&1
+    if [[ ("{ext}" == ".avi" || "{ext}" == ".wmv" || "{ext}" == ".ts") ]] && command -v HandBrakeCLI >/dev/null 2>&1; then
+        nice -n 10 HandBrakeCLI -i "{self.wsl_shm_dir}/raw_in{ext}" -o "{self.wsl_shm_dir}/active_in.mp4" -f av_mp4 -e x264 -q 16 --cfr -E av_aac -B 192 >/dev/null 2>&1
+    else
+        nice -n 10 ffmpeg -hide_banner -nostdin -y -i "{self.wsl_shm_dir}/raw_in{ext}" -c:v libx264 -preset veryfast -crf 16 -pix_fmt yuv420p -c:a aac -b:a 192k "{self.wsl_shm_dir}/active_in.mp4" >/dev/null 2>&1
+    fi
     rm -f "{self.wsl_shm_dir}/raw_in{ext}"
 else
     mv "{self.wsl_shm_dir}/raw_in{ext}" "{self.wsl_shm_dir}/active_in.mp4"
