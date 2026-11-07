@@ -76,6 +76,7 @@ for f in files:
     if h_sha in seen: continue
     seen.add(h_sha)
     out.append([f, sz, h_sha])
+out.sort(key=lambda x: x[1])
 print(json.dumps(out))
 '"""
         try:
@@ -172,7 +173,7 @@ print(json.dumps(out))
     def is_4k_or_rendered(filename: str, width: int = 0, height: int = 0) -> bool:
         """Return True if filename is an already-rendered Topaz deliverable or if video resolution is >= 4K."""
         lower_fn = filename.lower()
-        for tag in ("_iris3", "_rhea1", "_prob4", "_nyx3", "_ahq12", "_M4Mini_", "_V100_", "_RTX5080_", "_M1Max_", "_repaired"):
+        for tag in ("_iris3", "_rhea1", "_prob4", "_nyx3", "_ahq12", "_M4Mini_", "_V100_", "_RTX5080_", "_RTX4060_", "_LinuxGPU_", "_M1Max_", "_repaired"):
             if tag.lower() in lower_fn:
                 return True
         if max(width, height) >= 2140 or min(width, height) >= 2100:
@@ -199,7 +200,7 @@ print(json.dumps(out))
                 fn = ln.strip()
                 if not fn:
                     continue
-                for sep in ("_M4Mini_", "_V100_", "_RTX5080_", "_M1Max_", "_iris3", "_rhea1", "_prob4", "_nyx3", "_ahq12"):
+                for sep in ("_M4Mini_", "_V100_", "_RTX5080_", "_RTX4060_", "_LinuxGPU_", "_M1Max_", "_iris3", "_rhea1", "_prob4", "_nyx3", "_ahq12"):
                     if sep in fn:
                         raw_stem = fn.split(sep)[0]
                         done_stems.add(re.sub(r"[^A-Za-z0-9._-]", "_", raw_stem))
