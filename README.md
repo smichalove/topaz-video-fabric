@@ -18,16 +18,22 @@
 
 ---
 
-## Overview
+## Motivation & Why Use This?
 
-Upscaling large archival video libraries to 4K using neural filters (`iris-3`, `rhea-1`, `prob-4`, `nyx-3`) is heavily compute-bound and traditionally suffers from three major bottlenecks:
-1. **SSD Wear & I/O Bottlenecks:** Staging intermediate conditioned files and multi-gigabyte 4K streams on internal NVMe SSDs causes massive NAND write amplification.
-2. **Heterogeneous OS Friction:** Combining macOS Apple Silicon machines (`M1`/`M2`/`M3`/`M4`), Linux CUDA servers, and Windows workstations into a single collision-free queue is difficult.
-3. **Aspect-Ratio Distortion & Duplicate Work:** Mixed archival collections contain variable resolutions (`464p`, `480p`, `720p`, `1080p`), portrait/square/landscape framing, and duplicate files under different names.
+Modern AI video generation—both cloud APIs (such as **Google Gemini / Veo**, **Sora**, **Runway**, **Kling**, and **Luma**) and local open-weight diffusion models (**Wan**, **HunyuanVideo**, **LTX-Video**, **CogVideoX**)—almost universally generates clips at **low-to-medium base resolutions** (`464p`, `480p`, `540p`, `720p`, or `1080p`) across mixed aspect ratios (`16:9` landscape, `9:16` vertical, `1:1` square) to keep generation latency, VRAM footprints, and cloud API token costs practical.
 
-`topaz-cluster` solves all three problems with a unified Python orchestrator (`concurrent.futures`) that coordinates either:
-- **Path A (Pure Apple Silicon macOS Path):** A clean, zero-friction setup for one or more Macs using native Apple Neural Engine (`ANE`) + `h264_videotoolbox` inside a volatile `hdiutil` HFS+ RAMDisk (`/Volumes/TopazRAM`).
-- **Path B (Heterogeneous Mixed Fabric):** A hybrid cluster combining **macOS Apple Silicon nodes**, **Native Linux / WSL2 NVIDIA CUDA nodes** (via `.deb` package installation), and **Windows NVIDIA GPU workstations** (bridged via WSL2 `/dev/shm` UNC paths).
+While generating dozens or hundreds of base-resolution clips in the cloud takes only minutes, turning those raw generative outputs (or legacy archival libraries) into crisp, artifact-free **4K UHD (`3840x2160` / `2160x3840`)** masters creates a massive local compute bottleneck:
+1. **The "Generate Fast -> Stage -> Upscale All to 4K" Workflow Gap:** Doing manual, one-by-one GUI exports for a folder of 100+ cloud-generated clips is tedious, prone to aspect-ratio cropping mistakes, and wastes time re-rendering duplicate downloads.
+2. **SSD Wear & I/O Bottlenecks:** Staging intermediate conditioned files and multi-gigabyte 4K streams on internal NVMe SSDs causes heavy NAND write amplification (`100 GB+` of temporary writes per batch).
+3. **Idle Heterogeneous Silicon:** Most creators and engineers have multiple machines on their local network—such as an Apple Silicon MacBook/Mac Mini (`M1`/`M2`/`M3`/`M4`), a Linux server, and a Windows GPU workstation—that cannot natively share a single Topaz Video AI render queue.
+
+### Why `topaz-video-fabric`?
+`topaz-video-fabric` bridges cloud/local video generation and final 4K mastering into an automated, drop-folder compute fabric:
+- **Drop & Upscale Continuously:** Point the orchestrator at your downloads/staging folder; as new low-res cloud generations land, `QueueManager` dynamically discovers them, deduplicates identical clips by `SHA-256`, preserves each clip's exact native aspect ratio (`setsar=1:1`, zero cropping), and dispatches 4K neural upscaling (`iris-3`, `rhea-1`, `prob-4`, `nyx-3`) across every enabled node on your LAN.
+- **100% Volatile DRAM Staging (`0` SSD Writes):** Every byte of intermediate container repair (`HandBrakeCLI` / `ffmpeg`) and 4K encoding happens inside volatile RAMDisks (`/Volumes/TopazRAM` on macOS, `/dev/shm` on Linux and Windows WSL2), keeping your internal SSDs cool and unworn.
+- **Flexible Deployment:** Start with a **single clean Apple Silicon Mac** (`~25W-35W` silent ANE execution) or scale out to a **heterogeneous Linux `.deb` + Windows WSL2 + macOS supercluster**:
+  - **Path 1 (Pure Apple Silicon macOS Path):** A clean, zero-friction setup for one or more Macs using native Apple Neural Engine (`ANE`) + `h264_videotoolbox` inside a volatile `hdiutil` HFS+ RAMDisk (`/Volumes/TopazRAM`).
+  - **Path 2 (Heterogeneous Mixed Fabric):** A hybrid cluster combining **macOS Apple Silicon nodes**, **Native Linux / WSL2 NVIDIA CUDA nodes** (via `.deb` package installation), and **Windows NVIDIA GPU workstations** (bridged via WSL2 `/dev/shm` UNC paths).
 
 ---
 
