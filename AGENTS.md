@@ -56,12 +56,14 @@ Confirm every enabled node reports `PASS` (or `WARN (DEMAND)` for unmounted macO
    - **Linux / WSL2 (`TopazLinuxWorker`):** Must stage exclusively in `/dev/shm/topaz_*`.
    - **Windows (`TopazWindowsWorker`):** Must stage in WSL2 `/dev/shm` accessed via `\\wsl.localhost\<Distro>\dev\shm\...` UNC paths (or an explicitly configured encrypted scratch volume).
 
-2. **Phase-1 In-DRAM Corruption Protection (`hb_tmp`):**
+2. **Phase-1 In-DRAM Corruption Protection (`hb_tmp`) & Automatic Repair Retry:**
    - Legacy containers (`.avi`, `.wmv`, `.mkv`, `.ts`), non-standard audio (`pcm_alaw`, `pcm_mulaw`, `adpcm_ima_wav`), or streams flagged via `--force-condition` are repaired in DRAM (`hb_tmp`) using `HandBrakeCLI --cfr` or `ffmpeg -fflags +genpts+igndts -err_detect ignore_err` before invoking `tvai_up`.
+   - If a raw `.mp4`/`.mov` fails inside Topaz `ffmpeg` due to hidden bitstream/slice corruption, workers automatically retry the job once with Phase-1 in-DRAM corruption repair enabled (`force_repair=True`).
 
-3. **Aspect Ratio & Framing Policy (`allow_crop = False` by default):**
-   - By default (`allow_crop=False`), never inject `crop=` or `force_original_aspect_ratio=increase` into FFmpeg filter graphs; compute native even-integer 4K bounding dimensions via `ModelManager.compute_native_4k_dims(src_w, src_h, target_w, target_h)` and append `setsar=1:1` with `flags=lanczos`.
-   - Only inject `force_original_aspect_ratio=increase,crop=W:H` when `allow_crop=True` (`--allow-crop`) is explicitly requested.
+3. **Smart Aspect-Threshold 4K Framing Policy (`ModelManager.compute_smart_4k_framing`):**
+   - Sources within 15% of `16:9` or `9:16` (e.g., `832x480`, `404x720`, `720x1198`) automatically snap and center-crop (`force_original_aspect_ratio=increase,crop=W:H,setsar=1:1`) to exact `3840x2160` or `2160x3840` 4K UHD.
+   - Near-square (`1:1`) sources snap to `2160x2160`, and wider-delta sources (such as `4:3` `640x480` / `640x464`) preserve their uncropped native aspect ratio inside the 4K bounding box (`ModelManager.compute_native_4k_dims`).
+   - Passing `--allow-crop` (`allow_crop=True`) forces center-crop fill across all sources, and `--rm-source` (`delete_source_after_render=True`) deletes each source video after its 4K deliverable is byte-verified.
 
 4. **Hardware Instance Bounds & Iris-3 `scale=2` Rule:**
    - **Apple Silicon (`ane`, `ane_gpu`, `metal`):** `instances` must remain `1` because the Apple Neural Engine hardware queue strictly serializes neural graph execution.

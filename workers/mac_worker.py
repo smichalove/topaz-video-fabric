@@ -67,7 +67,7 @@ mount | grep -q '{self.ramdisk_mount}' && echo RAMDISK_READY || echo RAMDISK_MIS
         res = self._run_mac_ssh(mount_script, timeout=60)
         return "RAMDISK_READY" in res.stdout
 
-    def _condition_in_dram(self, filename: str, orig_h: int) -> Tuple[Optional[Path], int, int, int]:
+    def _condition_in_dram(self, filename: str, orig_h: int, force_repair: bool = False) -> Tuple[Optional[Path], int, int, int]:
         ext = Path(filename).suffix.lower()
         src_path = f"{self.cluster_cfg.storage.source_dir}/{filename}"
         raw_shm = self.local_hb_dir / f"mac_raw{ext}"
@@ -93,7 +93,8 @@ mount | grep -q '{self.ramdisk_mount}' && echo RAMDISK_READY || echo RAMDISK_MIS
         )
         a_codec = ac_res.stdout.strip()
         need_hb = (
-            self.cluster_cfg.model.force_condition
+            force_repair
+            or self.cluster_cfg.model.force_condition
             or ext not in (".mp4", ".mov", ".m4v")
             or a_codec in ("pcm_alaw", "pcm_mulaw", "adpcm_ima_wav")
         )
@@ -148,12 +149,12 @@ mount | grep -q '{self.ramdisk_mount}' && echo RAMDISK_READY || echo RAMDISK_MIS
 
         return repaired_shm, w, h, nbf
 
-    def process_job(self, job: JobItem) -> Tuple[bool, int, float, float]:
+    def process_job(self, job: JobItem, force_repair: bool = False) -> Tuple[bool, int, float, float]:
         if not self._ensure_ramdisk():
             self.logger.error("TopazMacWorker (%s): RAMDisk setup failed.", self.node_id)
             return False, 0, 0.0, 0.0
 
-        repaired_shm, w, h, nb_frames = self._condition_in_dram(job.filename, job.height)
+        repaired_shm, w, h, nb_frames = self._condition_in_dram(job.filename, job.height, force_repair=force_repair)
         if repaired_shm is None:
             return False, 0, 0.0, 0.0
 
@@ -225,6 +226,9 @@ stat -f %z "{m_out}" 2>/dev/null || echo 0
             err_tail = self._run_mac_ssh(f"tail -n 12 '{m_stderr}' 2>/dev/null || true", timeout=15).stdout
             self.logger.error("TopazMacWorker (%s): render failed for '%s' (rc=%d, size=%dB):\n%s", self.node_id, job.filename, ren_res.returncode, out_bytes, err_tail)
             self._run_mac_ssh(f'rm -P -f "{self.mac_ram_in}"/* "{self.mac_ram_out}"/* "{self.mac_ram_tmp}"/* 2>/dev/null || true', timeout=20)
+            if not force_repair and not self.cluster_cfg.model.force_condition:
+                self.logger.info("TopazMacWorker (%s): retrying '%s' with Phase-1 in-DRAM corruption repair enabled...", self.node_id, job.filename)
+                return self.process_job(job, force_repair=True)
             return False, 0, elapsed, 0.0
 
         fps = (nb_frames / elapsed) if nb_frames > 0 else 0.0

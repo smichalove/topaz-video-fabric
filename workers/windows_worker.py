@@ -49,7 +49,7 @@ class TopazWindowsWorker(BaseWorker):
             check=False,
         )
 
-    def _condition_audio_and_containers(self, raw_path: Path, repaired_path: Path, orig_h: int) -> Tuple[bool, int, int, int]:
+    def _condition_audio_and_containers(self, raw_path: Path, repaired_path: Path, orig_h: int, force_repair: bool = False) -> Tuple[bool, int, int, int]:
         ext = raw_path.suffix.lower()
         ac_res = subprocess.run(
             ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(raw_path)],
@@ -59,7 +59,8 @@ class TopazWindowsWorker(BaseWorker):
         )
         a_codec = ac_res.stdout.strip()
         need_hb = (
-            self.cluster_cfg.model.force_condition
+            force_repair
+            or self.cluster_cfg.model.force_condition
             or ext not in (".mp4", ".mov", ".m4v")
             or a_codec in ("pcm_alaw", "pcm_mulaw", "adpcm_ima_wav")
         )
@@ -114,7 +115,7 @@ class TopazWindowsWorker(BaseWorker):
             nbf = int(parts[2])
         return True, w, h, nbf
 
-    def process_job(self, job: JobItem) -> Tuple[bool, int, float, float]:
+    def process_job(self, job: JobItem, force_repair: bool = False) -> Tuple[bool, int, float, float]:
         ext = Path(job.filename).suffix.lower()
         src_path = f"{self.cluster_cfg.storage.source_dir}/{job.filename}"
 
@@ -142,7 +143,7 @@ class TopazWindowsWorker(BaseWorker):
         if self.is_wsl:
             # === WSL DRAM Staging Branch (e.g. RTX 5080 local, RTX 4070 remote) ===
             is_local = (self.node_cfg.ssh_host == self.cluster_cfg.storage.archive_host)
-            force_hb_flag = "1" if self.cluster_cfg.model.force_condition else "0"
+            force_hb_flag = "1" if (force_repair or self.cluster_cfg.model.force_condition) else "0"
             if is_local:
                 stage_script = f"""
 set -e
@@ -200,7 +201,7 @@ ffprobe -v error -select_streams v:0 -show_entries stream=width,height,nb_frames
                     raw_shm.unlink(missing_ok=True)
                     return False, 0, 0.0, 0.0
 
-                ok, w, h, nb_frames = self._condition_audio_and_containers(raw_shm, repaired_shm, job.height)
+                ok, w, h, nb_frames = self._condition_audio_and_containers(raw_shm, repaired_shm, job.height, force_repair=force_repair)
                 if not ok:
                     return False, 0, 0.0, 0.0
 
@@ -269,6 +270,9 @@ stat -c %s "{self.wsl_shm_dir}/active_out.mp4" 2>/dev/null || echo 0
             out_bytes = int(sz_lines[-1]) if sz_lines else 0
 
             if out_bytes < 1048576:
+                if not force_repair and not self.cluster_cfg.model.force_condition:
+                    self.logger.info("TopazWindowsWorker (%s): retrying '%s' with Phase-1 in-DRAM corruption repair enabled...", self.node_id, job.filename)
+                    return self.process_job(job, force_repair=True)
                 return False, 0, elapsed, 0.0
 
             fps = (nb_frames / elapsed) if nb_frames > 0 else 0.0
@@ -319,7 +323,7 @@ stat -c %s "{remote_dest}" 2>/dev/null || echo 0
                 raw_shm.unlink(missing_ok=True)
                 return False, 0, 0.0, 0.0
 
-            ok, w, h, nb_frames = self._condition_audio_and_containers(raw_shm, repaired_shm, job.height)
+            ok, w, h, nb_frames = self._condition_audio_and_containers(raw_shm, repaired_shm, job.height, force_repair=force_repair)
             if not ok:
                 return False, 0, 0.0, 0.0
 
@@ -398,6 +402,9 @@ stat -c %s "{remote_dest}" 2>/dev/null || echo 0
 
             if enc_proc.returncode != 0 or out_bytes < 1048576:
                 self._run_node_cmd(f'cmd /c del /f /q "{win_in}" "{win_out}" "{win_bat}" "{win_stdout}" "{win_stderr}"')
+                if not force_repair and not self.cluster_cfg.model.force_condition:
+                    self.logger.info("TopazWindowsWorker (%s): retrying '%s' with Phase-1 in-DRAM corruption repair enabled...", self.node_id, job.filename)
+                    return self.process_job(job, force_repair=True)
                 return False, 0, elapsed, 0.0
 
             fps = (nb_frames / elapsed) if nb_frames > 0 else 0.0

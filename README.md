@@ -43,13 +43,14 @@ While generating dozens or hundreds of base-resolution clips in the cloud takes 
 
 - **Zero-NAND Volatile DRAM Staging & Input Corruption Shield (`HandBrakeCLI` / `ffmpeg` in `hb_tmp`):**
   - **Protection Against Minor & Major Video Corruption:** Topaz Video AI's internal `ffmpeg` (`tvai_up`) is notoriously strict and will frequently crash mid-render, drop audio tracks, or hang at 99% if input videos are not 100% pristine (e.g., minor/major bitstream corruption, truncated packets from web/cloud downloads, non-monotonic PTS/DTS timestamps, variable frame rate spikes, or legacy `.avi`/`.wmv`/`.mkv`/`pcm_mulaw`/`pcm_alaw`/`adpcm` streams).
-  - **Automatic & Forced In-DRAM Repair (`hb_tmp` / `--force-condition`):** Before invoking `tvai_up`, each worker inspects the input stream via `ffprobe`. Legacy containers or incompatible audio codecs are automatically conditioned in volatile DRAM (`hb_tmp`) using `HandBrakeCLI --cfr` or `ffmpeg -fflags +genpts+igndts -err_detect ignore_err` (`CRF 16`, `yuv420p`, `AAC 192k`) to regenerate clean timestamps and heal corrupt packets so Topaz receives a pristine stream. Passing `--force-condition` forces this in-DRAM repair pass on **every** input file (including `.mp4`/`.mov` files with hidden mid-stream corruption).
+  - **Automatic Fallback & Forced In-DRAM Repair (`hb_tmp` / `--force-condition`):** Before invoking `tvai_up`, each worker inspects the input stream via `ffprobe`. Legacy containers or incompatible audio codecs are automatically conditioned in volatile DRAM (`hb_tmp`) using `HandBrakeCLI --cfr` or `ffmpeg -fflags +genpts+igndts -err_detect ignore_err` (`CRF 16`, `yuv420p`, `AAC 192k`) to regenerate clean timestamps and heal corrupt packets. Furthermore, if a raw `.mp4`/`.mov` fails inside Topaz `ffmpeg` due to hidden mid-stream slice/PPS corruption, the worker **automatically falls back to Phase-1 in-DRAM bitstream repair (`force_repair=True`) and retries the render**. Passing `--force-condition` forces this in-DRAM repair pass upfront on every input file.
   - **macOS (`TopazMacWorker`):** Automatically mounts a volatile HFS+ RAMDisk at `/Volumes/TopazRAM` (`hdiutil attach -nomount ram://...`) and securely wipes (`rm -P`) every job upon completion. Zero writes touch the internal Apple SSD.
   - **Linux & WSL2 (`TopazLinuxWorker`):** Stages raw inputs, Phase-1 audio/container conditioning (`hb_tmp`), and 4K NVENC outputs exclusively in `/dev/shm` (POSIX shared memory DRAM).
   - **Windows (`TopazWindowsWorker`):** Reads and writes directly against WSL2 `/dev/shm` exposed over zero-copy local UNC paths (`\\wsl.localhost\<Distro>\dev\shm\...`).
-- **Flexible Scaling, Aspect-Ratio Preservation & Cropping Modes (CLI Args or Config):**
-  - **Default Uncropped Native Aspect Ratio (`allow_crop: false`):** Automatically probes source dimensions (`width x height`) per clip and computes even-integer 4K bounding coordinates (`3840x2160` landscape, `2160x3840` portrait, `2160x2160` square) with `setsar=1:1` and `flags=lanczos`—zero stretching and zero cropping.
-  - **Optional Center-Crop Fill (`--allow-crop` / `allow_crop: true`) & Custom Dimensions (`--width`, `--height`, `--scale`, `--model`):** When full-frame widescreen/vertical fill is desired, pass `--allow-crop` (or set `allow_crop: true` in YAML) to engage `force_original_aspect_ratio=increase,crop=W:H,setsar=1:1`. All scaling, cropping, model (`iris-3`, `rhea-1`, `prob-4`, `nyx-3`), and neural scale factor (`--scale 2`) parameters can be controlled via CLI flags or `.sh` wrapper scripts.
+- **Smart Aspect-Threshold 4K Framing & Auto-Crop Optimization (`ModelManager.compute_smart_4k_framing`):**
+  - **Automatic Near-16:9 / Near-9:16 4K Snap (`<= 15%` aspect delta):** Cloud/social video generators frequently emit slightly off-standard dimensions (such as `832x480`, `404x720`, or `720x1198`). Sources within 15% of `16:9` or `9:16` automatically snap and center-crop (`force_original_aspect_ratio=increase,crop=W:H,setsar=1:1`) to exact **`3840x2160`** or **`2160x3840`** 4K UHD with zero thin letterbox/pillarbox bars.
+  - **Near-Square (`1:1`) & Archival (`4:3`) Preservation:** Near-square clips (`720x720`) snap cleanly to `2160x2160`, while wider-delta sources (such as `4:3` `640x480` or `640x464`) preserve their exact uncropped native aspect ratio inside the 4K bounding box (`3004x2160`).
+  - **Full CLI & Script Overrides (`--allow-crop`, `--width`, `--height`, `--scale`, `--model`, `--rm-source`):** Pass `--allow-crop` (or `allow_crop: true` in YAML) to force center-crop fill on all sources regardless of aspect ratio, or pass `--rm-source` (`delete_source_after_render: true`) to automatically delete each source video once its 4K deliverable is byte-verified.
 - **Dynamic Live Configuration Reload (On-the-Fly Node Hot-Join & Hot-Disable):**
   - Both `FabricDispatcher` and every running worker thread dynamically re-read `config/cluster_config.local.yaml` (or `config/cluster_config.yaml`) and `.env` **on the fly during live batch execution**:
     - **On-the-Fly Disable (`enabled: false`):** Flipping an active node to `enabled: false` lets it finish its current in-flight video and cleanly pause without losing a single frame.
@@ -308,13 +309,14 @@ python3 -m topaz_cluster.orchestrator \
   --dest "/path/to/output_4k" \
   --force-condition
 
-# Custom model, scale, target dimensions, or center-crop fill (--allow-crop):
+# Custom model, scale, target dimensions, center-crop fill (--allow-crop), or auto-remove source (--rm-source):
 python3 -m topaz_cluster.orchestrator \
   --model rhea-1 \
   --scale 2 \
   --width 3840 \
   --height 2160 \
-  --allow-crop
+  --allow-crop \
+  --rm-source
 ```
 
 ### 6. Dynamic Live Node Management (Hot-Join & Hot-Disable Without Restarting)

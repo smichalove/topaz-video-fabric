@@ -2,6 +2,7 @@
 
 import abc
 import logging
+import subprocess
 import threading
 import time
 from typing import Optional, Tuple, Union
@@ -134,6 +135,13 @@ class BaseWorker(abc.ABC, threading.Thread):
                         int(elapsed) // 60,
                         int(elapsed) % 60,
                     )
+                    if self.cluster_cfg.storage.delete_source_after_render:
+                        src_file = f"{self.cluster_cfg.storage.source_dir}/{job.filename}"
+                        subprocess.run(
+                            ["ssh", "-n", "-o", "BatchMode=yes", self.cluster_cfg.storage.archive_host, f'rm -f "{src_file}"'],
+                            check=False,
+                        )
+                        self.logger.info("[%s] Removed verified source file: %s", self.node_id, src_file)
                 else:
                     self.logger.warning(
                         "[%s] Job '%s' failed or byte count invalid (%dB). Releasing lock for retry.",

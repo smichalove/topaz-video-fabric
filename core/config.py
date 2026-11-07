@@ -20,6 +20,7 @@ class StorageConfig:
     source_dir: str = "/path/to/source"
     min_free_gb: float = 25.0
     check_interval_seconds: int = 15
+    delete_source_after_render: bool = False
 
 
 @dataclass
@@ -92,12 +93,16 @@ def load_cluster_config(config_path: Optional[Path] = None, env_path: Optional[U
         data = yaml.safe_load(f) or {}
 
     storage_data = data.get("storage", {})
+    del_src_val = get_val("TOPAZ_DELETE_SOURCE", storage_data.get("delete_source_after_render", False))
+    if isinstance(del_src_val, str):
+        del_src_val = del_src_val.lower() in ("1", "true", "yes")
     storage_cfg = StorageConfig(
         archive_host=str(get_val("TOPAZ_ARCHIVE_HOST", storage_data.get("archive_host", "user@archive-host"))),
         destination_dir=str(get_val("TOPAZ_DEST_DIR", storage_data.get("destination_dir", "/path/to/destination"))),
         source_dir=str(get_val("TOPAZ_SOURCE_DIR", storage_data.get("source_dir", "/path/to/source"))),
         min_free_gb=float(get_val("TOPAZ_MIN_FREE_GB", storage_data.get("min_free_gb", 25.0))),
         check_interval_seconds=int(storage_data.get("check_interval_seconds", 15)),
+        delete_source_after_render=bool(del_src_val),
     )
 
     model_data = data.get("model", {})

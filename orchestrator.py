@@ -83,6 +83,7 @@ def main() -> int:
     parser.add_argument("--height", type=int, default=None, help="Override target bounding height (default: 2160)")
     parser.add_argument("--allow-crop", action="store_true", help="Enable center-crop fill (force_original_aspect_ratio=increase,crop=W:H)")
     parser.add_argument("--force-condition", action="store_true", help="Force Phase-1 in-DRAM bitstream/timestamp repair on all inputs")
+    parser.add_argument("--rm-source", action="store_true", help="Remove source video file after its 4K deliverable is verified")
     parser.add_argument("--workers", nargs="+", default=None, help="Specific worker nodes to run (e.g. rtx5080 v100)")
     parser.add_argument("--status", action="store_true", help="Print live cluster queue and storage status and exit")
     parser.add_argument("--dry-run", action="store_true", help="Preview prioritized queues per worker without launching")
@@ -109,6 +110,13 @@ def main() -> int:
         os.environ["TOPAZ_ALLOW_CROP"] = "true"
     if args.force_condition:
         os.environ["TOPAZ_FORCE_CONDITION"] = "true"
+    if args.rm_source:
+        os.environ["TOPAZ_DELETE_SOURCE"] = "true"
+
+    # Strip bundled Topaz lib paths from parent process LD_LIBRARY_PATH so system ssh/ffprobe/ffmpeg are unaffected
+    if "LD_LIBRARY_PATH" in os.environ:
+        clean_ld = [p for p in os.environ["LD_LIBRARY_PATH"].split(":") if p and "TopazVideo" not in p]
+        os.environ["LD_LIBRARY_PATH"] = ":".join(clean_ld)
 
     cluster_cfg = load_cluster_config(config_path=args.config)
 

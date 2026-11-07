@@ -35,7 +35,7 @@ class TopazLinuxWorker(BaseWorker):
         self.shm_dir.mkdir(parents=True, exist_ok=True)
         self.hb_dir.mkdir(parents=True, exist_ok=True)
 
-    def _stage_and_condition(self, filename: str, orig_h: int) -> Tuple[Optional[Path], int, int, int, str]:
+    def _stage_and_condition(self, filename: str, orig_h: int, force_repair: bool = False) -> Tuple[Optional[Path], int, int, int, str]:
         ext = Path(filename).suffix.lower()
         src_path = f"{self.cluster_cfg.storage.source_dir}/{filename}"
         raw_shm = self.shm_dir / f"raw_in{ext}"
@@ -62,7 +62,8 @@ class TopazLinuxWorker(BaseWorker):
         )
         a_codec = ac_res.stdout.strip()
         need_hb = (
-            self.cluster_cfg.model.force_condition
+            force_repair
+            or self.cluster_cfg.model.force_condition
             or ext not in (".mp4", ".mov", ".m4v")
             or a_codec in ("pcm_alaw", "pcm_mulaw", "adpcm_ima_wav")
         )
@@ -120,8 +121,8 @@ class TopazLinuxWorker(BaseWorker):
 
         return active_in, w, h, nbf, avg_fps
 
-    def process_job(self, job: JobItem) -> Tuple[bool, int, float, float]:
-        active_in, w, h, nb_frames, avg_fps = self._stage_and_condition(job.filename, job.height)
+    def process_job(self, job: JobItem, force_repair: bool = False) -> Tuple[bool, int, float, float]:
+        active_in, w, h, nb_frames, avg_fps = self._stage_and_condition(job.filename, job.height, force_repair=force_repair)
         if active_in is None:
             return False, 0, 0.0, 0.0
 
@@ -148,6 +149,7 @@ class TopazLinuxWorker(BaseWorker):
             src_w=w,
             src_h=h,
         )
+        tvai_filter = tvai_filter.replace(":estimate=8", "").replace(":vram=1:", ":vram=0.8:")
 
         ffmpeg_bin = self.node_cfg.ffmpeg_path or "/opt/TopazVideoAIBETA/bin/ffmpeg"
         model_dir = self.node_cfg.model_dir or "/opt/TopazVideoAIBETA/models"
@@ -217,7 +219,7 @@ export TMPDIR="{r_shm}/hb_tmp"
             )
         else:
             env = os.environ.copy()
-            env["LD_LIBRARY_PATH"] = f"/usr/lib/x86_64-linux-gnu:{lib_dir}:{env.get('LD_LIBRARY_PATH', '')}".rstrip(":")
+            env["LD_LIBRARY_PATH"] = f"{lib_dir}:/usr/lib/x86_64-linux-gnu:{env.get('LD_LIBRARY_PATH', '')}".rstrip(":")
             env["TVAI_MODEL_DIR"] = model_dir
             env["TVAI_MODEL_DATA_DIR"] = model_dir
             env["TMPDIR"] = str(self.hb_dir)
@@ -306,6 +308,9 @@ export TMPDIR="{r_shm}/hb_tmp"
                 err_tail,
             )
             self.cleanup_job(job)
+            if not force_repair and not self.cluster_cfg.model.force_condition:
+                self.logger.info("TopazLinuxWorker (%s): retrying '%s' with Phase-1 in-DRAM corruption repair enabled...", self.node_id, job.filename)
+                return self.process_job(job, force_repair=True)
             return False, 0, elapsed, 0.0
 
         fps = (nb_frames / elapsed) if nb_frames > 0 else 0.0
