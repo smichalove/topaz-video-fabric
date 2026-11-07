@@ -7,6 +7,7 @@ using concurrent.futures, dynamic per-thread configuration reloading, and prefli
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import time
@@ -76,6 +77,12 @@ def main() -> int:
     parser.add_argument("--source", type=str, default=None, help="Override source directory")
     parser.add_argument("--dest", type=str, default=None, help="Override destination directory")
     parser.add_argument("--min-free-gb", type=float, default=None, help="Minimum destination free space (GB)")
+    parser.add_argument("--model", type=str, default=None, help="Override Topaz model (e.g. iris-3, rhea-1, prob-4, nyx-3)")
+    parser.add_argument("--scale", type=int, default=None, help="Override neural scale factor (e.g. 2, 4, 0)")
+    parser.add_argument("--width", type=int, default=None, help="Override target bounding width (default: 3840)")
+    parser.add_argument("--height", type=int, default=None, help="Override target bounding height (default: 2160)")
+    parser.add_argument("--allow-crop", action="store_true", help="Enable center-crop fill (force_original_aspect_ratio=increase,crop=W:H)")
+    parser.add_argument("--force-condition", action="store_true", help="Force Phase-1 in-DRAM bitstream/timestamp repair on all inputs")
     parser.add_argument("--workers", nargs="+", default=None, help="Specific worker nodes to run (e.g. rtx5080 v100)")
     parser.add_argument("--status", action="store_true", help="Print live cluster queue and storage status and exit")
     parser.add_argument("--dry-run", action="store_true", help="Preview prioritized queues per worker without launching")
@@ -83,15 +90,27 @@ def main() -> int:
     parser.add_argument("--skip-preflight", action="store_true", help="Skip host preflight check before launching")
     args = parser.parse_args()
 
-    cluster_cfg = load_cluster_config(config_path=args.config)
-
-    # CLI Overrides
+    # Propagate CLI overrides into process environment so worker hot-reloads preserve them
     if args.source:
-        cluster_cfg.storage.source_dir = args.source
+        os.environ["TOPAZ_SOURCE_DIR"] = args.source
     if args.dest:
-        cluster_cfg.storage.destination_dir = args.dest
-    if args.min_free_gb:
-        cluster_cfg.storage.min_free_gb = args.min_free_gb
+        os.environ["TOPAZ_DEST_DIR"] = args.dest
+    if args.min_free_gb is not None:
+        os.environ["TOPAZ_MIN_FREE_GB"] = str(args.min_free_gb)
+    if args.model:
+        os.environ["TOPAZ_MODEL"] = args.model
+    if args.scale is not None:
+        os.environ["TOPAZ_SCALE"] = str(args.scale)
+    if args.width is not None:
+        os.environ["TOPAZ_TARGET_WIDTH"] = str(args.width)
+    if args.height is not None:
+        os.environ["TOPAZ_TARGET_HEIGHT"] = str(args.height)
+    if args.allow_crop:
+        os.environ["TOPAZ_ALLOW_CROP"] = "true"
+    if args.force_condition:
+        os.environ["TOPAZ_FORCE_CONDITION"] = "true"
+
+    cluster_cfg = load_cluster_config(config_path=args.config)
 
     logger = setup_logging(cluster_cfg.log_dir)
     guardian = StorageGuardian(

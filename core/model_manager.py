@@ -133,10 +133,7 @@ class ModelManager:
         src_w: int = 0,
         src_h: int = 0,
     ) -> str:
-        """Generate canonical Topaz filter graph strictly enforcing native aspect ratio and uncropped output."""
-        if allow_crop:
-            raise ValueError("Safety invariant violated: allow_crop must remain False to prevent framing loss.")
-
+        """Generate canonical Topaz filter graph (defaulting to native aspect-ratio uncropped output, or center-crop fill when allow_crop=True)."""
         spec = self.get_model_spec(model_name)
         active_scale = scale if scale is not None else spec.recommended_scale
         active_blur = blur if blur is not None else spec.default_blur
@@ -146,14 +143,24 @@ class ModelManager:
         if not (0 <= instances <= 3):
             raise ValueError(f"Topaz instances={instances} out of range [0, 3].")
 
-        out_w, out_h = self.compute_native_4k_dims(src_w, src_h, target_w, target_h)
-
         model_params = (
             f"model={spec.name}:scale={active_scale}:preblur=0:noise=0:details=0:halo=0:"
             f"blur={active_blur:.2f}:compression=0:estimate=8:blend={active_blend:.2f}:"
             f"device={device_id}:vram=1:instances={instances}"
         )
 
+        if allow_crop:
+            crop_w = target_w
+            crop_h = target_h
+            if src_w > 0 and src_h > 0 and src_h > src_w and target_w > target_h:
+                crop_w, crop_h = target_h, target_w
+            scaler_params = (
+                f"scale=w={crop_w}:h={crop_h}:flags={scaling_filter}:threads=0:"
+                f"force_original_aspect_ratio=increase,crop={crop_w}:{crop_h}"
+            )
+            return f"tvai_up={model_params},{scaler_params},setsar=1:1"
+
+        out_w, out_h = self.compute_native_4k_dims(src_w, src_h, target_w, target_h)
         scaler_params = f"scale=w={out_w}:h={out_h}:flags={scaling_filter}:threads=0"
 
         # Immutable native aspect ratio preservation: 1:1 square pixel SAR, DAR matching out_w/out_h

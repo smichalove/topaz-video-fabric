@@ -57,8 +57,20 @@ def test_canonical_filter_string_construction():
     assert "scale=w=3840:h=2160:flags=lanczos:threads=0" in filt
     assert "setsar=1:1,setdar=16/9" in filt
 
-    # STRICT INVARIANT: Must NEVER include crop
+    # STRICT DEFAULT INVARIANT: Default allow_crop=False must NEVER include crop
     assert "crop=" not in filt
+
+    # Optional center-crop fill mode when allow_crop=True is explicitly passed
+    filt_crop = mgr.build_filter(
+        model_name="iris-3",
+        scale=2,
+        target_w=3840,
+        target_h=2160,
+        instances=2,
+        device_id=0,
+        allow_crop=True,
+    )
+    assert "force_original_aspect_ratio=increase,crop=3840:2160" in filt_crop
 
 
 def test_filter_builder_rejects_crop():

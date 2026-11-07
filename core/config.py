@@ -32,6 +32,7 @@ class ModelConfig:
     blur: float = -0.10
     blend: float = 0.20
     allow_crop: bool = False
+    force_condition: bool = False
 
 
 @dataclass
@@ -100,15 +101,22 @@ def load_cluster_config(config_path: Optional[Path] = None, env_path: Optional[U
     )
 
     model_data = data.get("model", {})
+    allow_crop_val = get_val("TOPAZ_ALLOW_CROP", model_data.get("allow_crop", False))
+    if isinstance(allow_crop_val, str):
+        allow_crop_val = allow_crop_val.lower() in ("1", "true", "yes")
+    force_cond_val = get_val("TOPAZ_FORCE_CONDITION", model_data.get("force_condition", False))
+    if isinstance(force_cond_val, str):
+        force_cond_val = force_cond_val.lower() in ("1", "true", "yes")
     model_cfg = ModelConfig(
         name=str(get_val("TOPAZ_MODEL", model_data.get("name", "iris-3"))),
-        scale=int(model_data.get("scale", 2)),
-        target_width=int(model_data.get("target_width", 3840)),
-        target_height=int(model_data.get("target_height", 2160)),
+        scale=int(get_val("TOPAZ_SCALE", model_data.get("scale", 2))),
+        target_width=int(get_val("TOPAZ_TARGET_WIDTH", model_data.get("target_width", 3840))),
+        target_height=int(get_val("TOPAZ_TARGET_HEIGHT", model_data.get("target_height", 2160))),
         scaling_filter=str(model_data.get("scaling_filter", "lanczos")),
         blur=float(model_data.get("blur", -0.10)),
         blend=float(model_data.get("blend", 0.20)),
-        allow_crop=bool(model_data.get("allow_crop", False)),
+        allow_crop=bool(allow_crop_val),
+        force_condition=bool(force_cond_val),
     )
 
     cluster_data = data.get("cluster", {})

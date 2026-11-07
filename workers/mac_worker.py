@@ -92,7 +92,11 @@ mount | grep -q '{self.ramdisk_mount}' && echo MOUNTED || echo NOT_MOUNTED
             check=False,
         )
         a_codec = ac_res.stdout.strip()
-        need_hb = ext not in (".mp4", ".mov", ".m4v") or a_codec in ("pcm_alaw", "pcm_mulaw", "adpcm_ima_wav")
+        need_hb = (
+            self.cluster_cfg.model.force_condition
+            or ext not in (".mp4", ".mov", ".m4v")
+            or a_codec in ("pcm_alaw", "pcm_mulaw", "adpcm_ima_wav")
+        )
 
         if not need_hb:
             raw_shm.rename(repaired_shm)
@@ -110,6 +114,7 @@ mount | grep -q '{self.ramdisk_mount}' && echo MOUNTED || echo NOT_MOUNTED
             else:
                 hb_cmd = [
                     "nice", "-n", "15", "ffmpeg", "-hide_banner", "-nostdin", "-y",
+                    "-fflags", "+genpts+igndts", "-err_detect", "ignore_err",
                     "-i", str(raw_shm),
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k",

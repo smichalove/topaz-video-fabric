@@ -58,7 +58,11 @@ class TopazWindowsWorker(BaseWorker):
             check=False,
         )
         a_codec = ac_res.stdout.strip()
-        need_hb = ext not in (".mp4", ".mov", ".m4v") or a_codec in ("pcm_alaw", "pcm_mulaw", "adpcm_ima_wav")
+        need_hb = (
+            self.cluster_cfg.model.force_condition
+            or ext not in (".mp4", ".mov", ".m4v")
+            or a_codec in ("pcm_alaw", "pcm_mulaw", "adpcm_ima_wav")
+        )
 
         if not need_hb:
             raw_path.rename(repaired_path)
@@ -76,6 +80,7 @@ class TopazWindowsWorker(BaseWorker):
             else:
                 hb_cmd = [
                     "nice", "-n", "15", "ffmpeg", "-hide_banner", "-nostdin", "-y",
+                    "-fflags", "+genpts+igndts", "-err_detect", "ignore_err",
                     "-i", str(raw_path),
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-b:a", "192k",
@@ -137,6 +142,7 @@ class TopazWindowsWorker(BaseWorker):
         if self.is_wsl:
             # === WSL DRAM Staging Branch (e.g. RTX 5080 local, RTX 4070 remote) ===
             is_local = (self.node_cfg.ssh_host == self.cluster_cfg.storage.archive_host)
+            force_hb_flag = "1" if self.cluster_cfg.model.force_condition else "0"
             if is_local:
                 stage_script = f"""
 set -e
@@ -145,7 +151,7 @@ rm -f "{self.wsl_shm_dir}"/*.mp4 "{self.wsl_shm_dir}"/*.avi "{self.wsl_shm_dir}"
 cp "{src_path}" "{self.wsl_shm_dir}/raw_in{ext}"
 
 A_CODEC=$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of csv=p=0 "{self.wsl_shm_dir}/raw_in{ext}" 2>/dev/null || echo "")
-NEED_HB=0
+NEED_HB={force_hb_flag}
 if [[ "{ext}" != ".mp4" && "{ext}" != ".mov" && "{ext}" != ".m4v" ]]; then
     NEED_HB=1
 elif [[ "$A_CODEC" == "pcm_alaw" || "$A_CODEC" == "pcm_mulaw" || "$A_CODEC" == "adpcm_ima_wav" ]]; then
@@ -157,7 +163,7 @@ if [[ "$NEED_HB" == "1" ]]; then
     if [[ ("{ext}" == ".avi" || "{ext}" == ".wmv" || "{ext}" == ".ts") ]] && command -v HandBrakeCLI >/dev/null 2>&1; then
         nice -n 10 HandBrakeCLI -i "{self.wsl_shm_dir}/raw_in{ext}" -o "{self.wsl_shm_dir}/active_in.mp4" -f av_mp4 -e x264 -q 16 --cfr -E av_aac -B 192 >/dev/null 2>&1
     else
-        nice -n 10 ffmpeg -hide_banner -nostdin -y -i "{self.wsl_shm_dir}/raw_in{ext}" -c:v libx264 -preset veryfast -crf 16 -pix_fmt yuv420p -c:a aac -b:a 192k "{self.wsl_shm_dir}/active_in.mp4" >/dev/null 2>&1
+        nice -n 10 ffmpeg -hide_banner -nostdin -y -fflags +genpts+igndts -err_detect ignore_err -i "{self.wsl_shm_dir}/raw_in{ext}" -c:v libx264 -preset veryfast -crf 16 -pix_fmt yuv420p -c:a aac -b:a 192k "{self.wsl_shm_dir}/active_in.mp4" >/dev/null 2>&1
     fi
     rm -f "{self.wsl_shm_dir}/raw_in{ext}"
 else

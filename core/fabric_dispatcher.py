@@ -194,7 +194,8 @@ class FabricDispatcher:
             return False
 
         logger.info("Deploying compute fabric across %d nodes: %s", len(target_nodes), target_nodes)
-        self.executor = ThreadPoolExecutor(max_workers=len(target_nodes), thread_name_prefix="FabricWorker")
+        max_pool = max(16, len(cluster_cfg.nodes) + 8)
+        self.executor = ThreadPoolExecutor(max_workers=max_pool, thread_name_prefix="FabricWorker")
 
         for node_id in target_nodes:
             # Read config prior to each fabric thread dispatch
@@ -202,6 +203,31 @@ class FabricDispatcher:
             self.futures[node_id] = fut
 
         return True
+
+    def sync_dynamic_nodes(self) -> List[str]:
+        """Re-read cluster_config.yaml and hot-join any newly added or newly enabled nodes on the fly."""
+        if not self.executor or self._stop_event.is_set():
+            return []
+        try:
+            fresh_cfg = self.read_fresh_config()
+        except Exception as e:
+            logger.warning("FabricDispatcher: failed to read config during dynamic node sync: %s", e)
+            return []
+
+        joined: List[str] = []
+        for node_id, node_cfg in fresh_cfg.nodes.items():
+            if self.selected_nodes and node_id not in self.selected_nodes:
+                continue
+            if node_cfg.enabled and node_id not in self.futures:
+                logger.info(
+                    "[%s] Dynamically hot-joining newly enabled node '%s' (%s) into active compute fabric!",
+                    node_id,
+                    node_cfg.name,
+                    node_cfg.accelerator,
+                )
+                self.futures[node_id] = self.executor.submit(self._run_fabric_worker, node_id)
+                joined.append(node_id)
+        return joined
 
     def stop(self) -> None:
         """Signal all fabric workers to gracefully stop and wait for completions."""
@@ -215,15 +241,20 @@ class FabricDispatcher:
             logger.info("FabricDispatcher: All fabric threads cleanly joined and terminated.")
 
     def monitor(self, poll_interval_sec: int = 15) -> None:
-        """Monitor running futures and cluster health until all complete or shutdown."""
+        """Monitor running futures, hot-join newly enabled nodes, and audit cluster health until completion."""
+        logged_done = set()
         while any(not fut.done() for fut in self.futures.values()):
             if self._stop_event.is_set():
                 break
             time.sleep(poll_interval_sec)
 
-            # Check futures for exceptions
+            # Hot-join any newly added or newly enabled nodes from live config
+            self.sync_dynamic_nodes()
+
+            # Check futures for exceptions or completions
             for node_id, fut in list(self.futures.items()):
-                if fut.done():
+                if fut.done() and node_id not in logged_done:
+                    logged_done.add(node_id)
                     exc = fut.exception()
                     if exc:
                         logger.error("[%s] Future exited with exception: %s", node_id, exc)

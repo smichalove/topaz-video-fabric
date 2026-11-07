@@ -31,23 +31,30 @@ While generating dozens or hundreds of base-resolution clips in the cloud takes 
 `topaz-video-fabric` bridges cloud/local video generation and final 4K mastering into an automated, drop-folder compute fabric:
 - **Drop & Upscale Continuously:** Point the orchestrator at your downloads/staging folder; as new low-res cloud generations land, `QueueManager` dynamically discovers them, deduplicates identical clips by `SHA-256`, preserves each clip's exact native aspect ratio (`setsar=1:1`, zero cropping), and dispatches 4K neural upscaling (`iris-3`, `rhea-1`, `prob-4`, `nyx-3`) across every enabled node on your LAN.
 - **100% Volatile DRAM Staging (`0` SSD Writes):** Every byte of intermediate container repair (`HandBrakeCLI` / `ffmpeg`) and 4K encoding happens inside volatile RAMDisks (`/Volumes/TopazRAM` on macOS, `/dev/shm` on Linux and Windows WSL2), keeping your internal SSDs cool and unworn.
-- **Flexible Deployment:** Start with a **single clean Apple Silicon Mac** (`~25W-35W` silent ANE execution) or scale out to a **heterogeneous Linux `.deb` + Windows WSL2 + macOS supercluster**:
-  - **Path 1 (Pure Apple Silicon macOS Path):** A clean, zero-friction setup for one or more Macs using native Apple Neural Engine (`ANE`) + `h264_videotoolbox` inside a volatile `hdiutil` HFS+ RAMDisk (`/Volumes/TopazRAM`).
-  - **Path 2 (Heterogeneous Mixed Fabric):** A hybrid cluster combining **macOS Apple Silicon nodes**, **Native Linux / WSL2 NVIDIA CUDA nodes** (via `.deb` package installation), and **Windows NVIDIA GPU workstations** (bridged via WSL2 `/dev/shm` UNC paths).
+- **Flexible Deployment (With Built-In [`AGENTS.md`](AGENTS.md) for AI Pair-Configuration):**
+  - Setting up a multi-OS GPU/ANE cluster can be complex—so this repository includes a comprehensive **[`AGENTS.md`](AGENTS.md)** playbook designed for AI coding assistants (**Google Antigravity**, **Claude Code**, **Cursor**, **Windsurf**, **GitHub Copilot**). Simply point your AI agent at [`AGENTS.md`](AGENTS.md) and ask it to pair-configure your cluster: it will interview you for your host IPs, generate your gitignored `config/cluster_config.local.yaml`, verify your SSH keys and RAMDisks via `--syschk`, and launch your pipeline.
+  - Start with a **single clean Apple Silicon Mac** (`~25W-35W` silent ANE execution) or scale out to a **heterogeneous Linux `.deb` + Windows WSL2 + macOS supercluster**:
+    - **Path 1 (Pure Apple Silicon macOS Path):** A clean, zero-friction setup for one or more Macs using native Apple Neural Engine (`ANE`) + `h264_videotoolbox` inside a volatile `hdiutil` HFS+ RAMDisk (`/Volumes/TopazRAM`).
+    - **Path 2 (Heterogeneous Mixed Fabric):** A hybrid cluster combining **macOS Apple Silicon nodes**, **Native Linux / WSL2 NVIDIA CUDA nodes** (via `.deb` package installation), and **Windows NVIDIA GPU workstations** (bridged via WSL2 `/dev/shm` UNC paths).
 
 ---
 
 ## Key Architectural Features
 
-- **Zero-NAND Volatile DRAM Staging & Phase-1 Container Conditioning:**
-  - **Why Phase-1 Conditioning (`HandBrakeCLI` / `ffmpeg` in `hb_tmp`) Matters:** Legacy archival clips (`.avi`, `.wmv`, `.mkv`, `.ts`, or old camera `.mp4`/`.mov` files with non-monotonic PTS/DTS timestamps, variable framerates, or `pcm_alaw` / `pcm_mulaw` / `adpcm_ima_wav` audio) frequently cause Topaz's custom `tvai_up` pipeline to crash mid-render, drop audio tracks, or hang at 99%.
-  - **Automatic In-DRAM Repair (`hb_tmp`):** Before invoking `tvai_up`, each worker inspects the input stream via `ffprobe`. Clean `.mp4`/`.mov`/`.m4v` clips take a `0ms` zero-copy fast path (`mv` inside DRAM), while legacy containers or incompatible audio codecs are automatically conditioned in volatile DRAM (`hb_tmp` at `CRF 16`, `yuv420p`, `AAC 192k`) so Topaz receives a 100% compliant stream.
+- **Zero-NAND Volatile DRAM Staging & Input Corruption Shield (`HandBrakeCLI` / `ffmpeg` in `hb_tmp`):**
+  - **Protection Against Minor & Major Video Corruption:** Topaz Video AI's internal `ffmpeg` (`tvai_up`) is notoriously strict and will frequently crash mid-render, drop audio tracks, or hang at 99% if input videos are not 100% pristine (e.g., minor/major bitstream corruption, truncated packets from web/cloud downloads, non-monotonic PTS/DTS timestamps, variable frame rate spikes, or legacy `.avi`/`.wmv`/`.mkv`/`pcm_mulaw`/`pcm_alaw`/`adpcm` streams).
+  - **Automatic & Forced In-DRAM Repair (`hb_tmp` / `--force-condition`):** Before invoking `tvai_up`, each worker inspects the input stream via `ffprobe`. Legacy containers or incompatible audio codecs are automatically conditioned in volatile DRAM (`hb_tmp`) using `HandBrakeCLI --cfr` or `ffmpeg -fflags +genpts+igndts -err_detect ignore_err` (`CRF 16`, `yuv420p`, `AAC 192k`) to regenerate clean timestamps and heal corrupt packets so Topaz receives a pristine stream. Passing `--force-condition` forces this in-DRAM repair pass on **every** input file (including `.mp4`/`.mov` files with hidden mid-stream corruption).
   - **macOS (`TopazMacWorker`):** Automatically mounts a volatile HFS+ RAMDisk at `/Volumes/TopazRAM` (`hdiutil attach -nomount ram://...`) and securely wipes (`rm -P`) every job upon completion. Zero writes touch the internal Apple SSD.
   - **Linux & WSL2 (`TopazLinuxWorker`):** Stages raw inputs, Phase-1 audio/container conditioning (`hb_tmp`), and 4K NVENC outputs exclusively in `/dev/shm` (POSIX shared memory DRAM).
   - **Windows (`TopazWindowsWorker`):** Reads and writes directly against WSL2 `/dev/shm` exposed over zero-copy local UNC paths (`\\wsl.localhost\<Distro>\dev\shm\...`).
-- **Native Aspect-Ratio 4K Scaling (Zero Stretching, Zero Cropping):**
-  - Automatically probes source dimensions (`width x height`) per clip and computes even-integer 4K bounding coordinates (`3840x2160` landscape or `2160x3840` portrait/square) with `setsar=1:1` and `flags=lanczos`.
-  - Enforces a strict `allow_crop=False` invariant so no pixels are ever cropped or stretched.
+- **Flexible Scaling, Aspect-Ratio Preservation & Cropping Modes (CLI Args or Config):**
+  - **Default Uncropped Native Aspect Ratio (`allow_crop: false`):** Automatically probes source dimensions (`width x height`) per clip and computes even-integer 4K bounding coordinates (`3840x2160` landscape, `2160x3840` portrait, `2160x2160` square) with `setsar=1:1` and `flags=lanczos`—zero stretching and zero cropping.
+  - **Optional Center-Crop Fill (`--allow-crop` / `allow_crop: true`) & Custom Dimensions (`--width`, `--height`, `--scale`, `--model`):** When full-frame widescreen/vertical fill is desired, pass `--allow-crop` (or set `allow_crop: true` in YAML) to engage `force_original_aspect_ratio=increase,crop=W:H,setsar=1:1`. All scaling, cropping, model (`iris-3`, `rhea-1`, `prob-4`, `nyx-3`), and neural scale factor (`--scale 2`) parameters can be controlled via CLI flags or `.sh` wrapper scripts.
+- **Dynamic Live Configuration Reload (On-the-Fly Node Hot-Join & Hot-Disable):**
+  - Both `FabricDispatcher` and every running worker thread dynamically re-read `config/cluster_config.local.yaml` (or `config/cluster_config.yaml`) and `.env` **on the fly during live batch execution**:
+    - **On-the-Fly Disable (`enabled: false`):** Flipping an active node to `enabled: false` lets it finish its current in-flight video and cleanly pause without losing a single frame.
+    - **On-the-Fly Hot-Join (`enabled: true` or New Node Added):** Enabling a previously disabled node or adding a brand-new node entry to `cluster_config.yaml` while the orchestrator is running automatically spawns a new fabric worker thread within 15 seconds (`sync_dynamic_nodes()`).
+    - **Live Parameter Tuning:** Adjusting `instances`, `priority_tiers`, `min_free_gb`, or `source_dir` takes effect immediately on the next job cycle.
 - **Iris-3 `scale=2` Hardware Optimization:**
   - Uses `tvai_up=model=iris-3:scale=2` followed by high-precision Lanczos scaling to 4K.
   - On **Apple Silicon**, `scale=2` engages the native Apple Neural Engine (`-2x-13-ane-mlp`) weights rather than falling back to legacy CPU/Espresso paths.
@@ -99,7 +106,15 @@ flowchart TD
 
 ## Choose Your Setup Path
 
-Because setting up distributed GPU video upscaling can range from a single Mac to a multi-OS render farm, `topaz-cluster` supports two primary deployment paths.
+> [!TIP]
+> **AI-Assisted Pair Configuration (`AGENTS.md` Included!):**
+> You don't have to write YAML or debug SSH paths by hand. An **[`AGENTS.md`](AGENTS.md)** file is included in the root of this repository specifically for AI coding assistants (**Antigravity**, **Claude Code**, **Cursor**, **Windsurf**, **Copilot**).
+>
+> Open this repository in your AI coding tool and prompt:
+> *"Read `AGENTS.md` and pair-configure `topaz-video-fabric` for my machines."*
+> Your AI assistant will inspect your local/remote nodes, create `config/cluster_config.local.yaml`, run `--syschk` preflight verification, and help you tune your worker queues.
+
+Because setting up distributed GPU video upscaling can range from a single Mac to a multi-OS render farm, `topaz-video-fabric` supports two primary deployment paths.
 
 ### Path 1: The Clean Apple Silicon macOS Path (Easiest Setup)
 
@@ -276,9 +291,9 @@ python3 -m topaz_cluster.orchestrator --status
 python3 -m topaz_cluster.orchestrator --dry-run
 ```
 
-### 5. Launch the Compute Fabric
+### 5. Launch the Compute Fabric (CLI Flags & Scaling/Cropping/Repair Options)
 ```bash
-# Launch all enabled nodes in config/cluster_config.local.yaml:
+# Launch all enabled nodes in config/cluster_config.local.yaml (default: iris-3, scale=2, uncropped 4K):
 python3 -m topaz_cluster.orchestrator
 
 # Override source/destination directories or run specific worker nodes on the fly:
@@ -286,7 +301,26 @@ python3 -m topaz_cluster.orchestrator \
   --source "/path/to/source_clips" \
   --dest "/path/to/output_4k" \
   --workers mac_node_1 linux_cuda_node_1
+
+# Force Phase-1 in-DRAM bitstream/timestamp repair (--force-condition) for corrupted web/cloud clips:
+python3 -m topaz_cluster.orchestrator \
+  --source "/path/to/corrupted_or_vfr_clips" \
+  --dest "/path/to/output_4k" \
+  --force-condition
+
+# Custom model, scale, target dimensions, or center-crop fill (--allow-crop):
+python3 -m topaz_cluster.orchestrator \
+  --model rhea-1 \
+  --scale 2 \
+  --width 3840 \
+  --height 2160 \
+  --allow-crop
 ```
+
+### 6. Dynamic Live Node Management (Hot-Join & Hot-Disable Without Restarting)
+While `python3 -m topaz_cluster.orchestrator` is running:
+- **Disable a node on the fly:** Edit `config/cluster_config.local.yaml` (or `config/cluster_config.yaml`) and set `enabled: false` on any node. That worker will finish its current in-flight video, deliver the verified 4K `.mp4`, and pause cleanly.
+- **Add or re-enable a node on the fly:** Set `enabled: true` or add a new node block to `config/cluster_config.local.yaml`. Within 15 seconds, `FabricDispatcher.sync_dynamic_nodes()` automatically hot-joins the node into the active thread pool so it starts claiming jobs from the queue.
 
 ---
 

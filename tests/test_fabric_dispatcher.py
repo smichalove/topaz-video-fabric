@@ -137,3 +137,84 @@ nodes:
     dispatcher.stop()
     assert dispatcher._stop_event.is_set()
     assert all(fut.done() for fut in dispatcher.futures.values())
+
+
+def test_fabric_dispatcher_dynamic_hot_join(monkeypatch, tmp_path):
+    cfg_file = tmp_path / "hot_join_cluster.yaml"
+    cfg_file.write_text("""
+storage:
+  archive_host: "test_host"
+  destination_dir: "/tmp/dest"
+  source_dir: "/tmp/src"
+  min_free_gb: 10.0
+model:
+  name: "iris-3"
+  scale: 2
+nodes:
+  node_a:
+    enabled: true
+    name: "Node A"
+    ssh_host: "localhost"
+    accelerator: "cuda"
+  node_b:
+    enabled: false
+    name: "Node B"
+    ssh_host: "localhost"
+    accelerator: "ane"
+""")
+
+    dispatcher = FabricDispatcher(config_path=cfg_file, env_path=False)
+    monkeypatch.setattr("topaz_cluster.core.storage_guardian.StorageGuardian.is_safe", lambda self: (True, 100.0))
+
+    run_calls = []
+
+    def mock_run_fabric_worker(node_id):
+        run_calls.append(node_id)
+        while not dispatcher._stop_event.is_set():
+            time.sleep(0.05)
+        return 1
+
+    monkeypatch.setattr(dispatcher, "_run_fabric_worker", mock_run_fabric_worker)
+
+    started = dispatcher.start(run_preflight=False)
+    assert started is True
+    assert list(dispatcher.futures.keys()) == ["node_a"]
+
+    # Dynamically enable node_b AND add a brand-new node_c in YAML while fabric is running
+    cfg_file.write_text("""
+storage:
+  archive_host: "test_host"
+  destination_dir: "/tmp/dest"
+  source_dir: "/tmp/src"
+  min_free_gb: 10.0
+model:
+  name: "iris-3"
+  scale: 2
+nodes:
+  node_a:
+    enabled: true
+    name: "Node A"
+    ssh_host: "localhost"
+    accelerator: "cuda"
+  node_b:
+    enabled: true
+    name: "Node B"
+    ssh_host: "localhost"
+    accelerator: "ane"
+  node_c:
+    enabled: true
+    name: "Node C"
+    ssh_host: "localhost"
+    accelerator: "linux_cuda"
+""")
+
+    joined = dispatcher.sync_dynamic_nodes()
+    assert sorted(joined) == ["node_b", "node_c"]
+    assert "node_b" in dispatcher.futures
+    assert "node_c" in dispatcher.futures
+
+    time.sleep(0.15)
+    assert "node_b" in run_calls
+    assert "node_c" in run_calls
+
+    dispatcher.stop()
