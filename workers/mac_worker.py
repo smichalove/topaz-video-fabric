@@ -50,8 +50,8 @@ class TopazMacWorker(BaseWorker):
         )
 
     def _ensure_ramdisk(self) -> bool:
-        check = self._run_mac_ssh(f"mount | grep -q '{self.ramdisk_mount}' && echo MOUNTED || echo NOT_MOUNTED", timeout=15)
-        if "MOUNTED" in check.stdout:
+        check = self._run_mac_ssh(f"mount | grep -q '{self.ramdisk_mount}' && echo RAMDISK_READY || echo RAMDISK_MISSING", timeout=15)
+        if "RAMDISK_READY" in check.stdout:
             self._run_mac_ssh(f'mkdir -p "{self.mac_ram_in}" "{self.mac_ram_out}" "{self.mac_ram_tmp}"', timeout=15)
             return True
 
@@ -62,10 +62,10 @@ DEV=$(hdiutil attach -nomount ram://{ram_sectors} | awk '{{print $1}}')
 diskutil eraseVolume HFS+ TopazRAM "$DEV" >/dev/null 2>&1
 mkdir -p "{self.mac_ram_in}" "{self.mac_ram_out}" "{self.mac_ram_tmp}"
 chmod -R 777 "{self.ramdisk_mount}"
-mount | grep -q '{self.ramdisk_mount}' && echo MOUNTED || echo NOT_MOUNTED
+mount | grep -q '{self.ramdisk_mount}' && echo RAMDISK_READY || echo RAMDISK_MISSING
 """
         res = self._run_mac_ssh(mount_script, timeout=60)
-        return "MOUNTED" in res.stdout
+        return "RAMDISK_READY" in res.stdout
 
     def _condition_in_dram(self, filename: str, orig_h: int) -> Tuple[Optional[Path], int, int, int]:
         ext = Path(filename).suffix.lower()

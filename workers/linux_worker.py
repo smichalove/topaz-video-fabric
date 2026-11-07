@@ -180,7 +180,7 @@ class TopazLinuxWorker(BaseWorker):
             fps_arg = f"-r {avg_fps} " if avg_fps else ""
             r_script = f"""
 export CUDA_FORCE_PTX_JIT=1
-export LD_LIBRARY_PATH="/usr/lib/wsl/lib:{lib_dir}"
+export LD_LIBRARY_PATH="/usr/lib/wsl/lib:/usr/lib/x86_64-linux-gnu:{lib_dir}"
 export TVAI_MODEL_DIR="{model_dir}"
 export TVAI_MODEL_DATA_DIR="{model_dir}"
 export VK_ICD_FILENAMES="${{HOME}}/.config/vulkan/icd.d/nvidia_icd.json:/usr/share/vulkan/icd.d/nvidia_icd.json"
@@ -217,7 +217,7 @@ export TMPDIR="{r_shm}/hb_tmp"
             )
         else:
             env = os.environ.copy()
-            env["LD_LIBRARY_PATH"] = f"{lib_dir}:{env.get('LD_LIBRARY_PATH', '')}".rstrip(":")
+            env["LD_LIBRARY_PATH"] = f"/usr/lib/x86_64-linux-gnu:{lib_dir}:{env.get('LD_LIBRARY_PATH', '')}".rstrip(":")
             env["TVAI_MODEL_DIR"] = model_dir
             env["TVAI_MODEL_DATA_DIR"] = model_dir
             env["TMPDIR"] = str(self.hb_dir)

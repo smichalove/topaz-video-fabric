@@ -13,8 +13,11 @@ from topaz_cluster.core.config import (
 )
 
 
-def test_default_config_loading():
-    cfg = load_cluster_config()
+def test_default_config_loading(monkeypatch):
+    for k in ("TOPAZ_ARCHIVE_HOST", "TOPAZ_SOURCE_DIR", "TOPAZ_DESTINATION_DIR", "TOPAZ_MIN_FREE_GB", "TOPAZ_MODEL_NAME", "TOPAZ_ALLOW_CROP"):
+        monkeypatch.delenv(k, raising=False)
+    default_yaml = Path(__file__).resolve().parent.parent / "config" / "cluster_config.yaml"
+    cfg = load_cluster_config(config_path=default_yaml, env_path=False)
     assert isinstance(cfg, ClusterConfig)
     assert isinstance(cfg.storage, StorageConfig)
     assert isinstance(cfg.model, ModelConfig)
