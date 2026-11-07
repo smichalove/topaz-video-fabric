@@ -367,6 +367,13 @@ topaz_cluster/
 
 ---
 
-## License
+## License & Disclaimer
 
-Released under the [MIT License](LICENSE). See [LICENSE](LICENSE) for full terms and third-party trademark/licensing disclaimers regarding Topaz Labs LLC.
+Released under the [MIT License](LICENSE). See [LICENSE](LICENSE) for full terms.
+
+**Disclaimer:** This work is an independent open-source project and does not represent [Topaz Labs](https://www.topazlabs.com/) (`https://www.topazlabs.com/`) or its affiliates, nor is it affiliated with, endorsed by, or sponsored by [Topaz Labs LLC](https://www.topazlabs.com/). Users must hold a valid license from [Topaz Labs](https://www.topazlabs.com/) for each worker node running Topaz Video AI.
+
+---
+
+**Mentions & Ecosystem:** `@topazlabs` `@NVIDIA` `@Apple` `@FFmpeg` `@HandBrake` `@GoogleDeepMind`  
+**Tags:** `#TopazVideoAI` `#VideoUpscaling` `#4KUHD` `#AppleSilicon` `#NeuralEngine` `#ANE` `#NVIDIA` `#TensorRT` `#CUDA` `#NVENC` `#VideoToolbox` `#FFmpeg` `#HandBrake` `#RAMDisk` `#ZeroNAND` `#DistributedComputing` `#GenerativeVideo` `#AIVideo` `#AgenticCoding` `#AGENTSmd`
