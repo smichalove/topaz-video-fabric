@@ -6,6 +6,10 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Zero-NAND DRAM Staging](https://img.shields.io/badge/Storage-Zero--NAND%20DRAM-success.svg)](#key-architectural-features)
 
+<p align="center">
+  <img src="topaz_fabric.png" alt="topaz-video-fabric Architecture Infographic" width="100%" />
+</p>
+
 ---
 
 > [!IMPORTANT]
