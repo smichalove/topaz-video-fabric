@@ -135,9 +135,11 @@ class TopazWindowsWorker(BaseWorker):
             blend=self.cluster_cfg.model.blend,
             scaling_filter=self.cluster_cfg.model.scaling_filter,
             allow_crop=self.cluster_cfg.model.allow_crop,
+            enhancement_strength=self.cluster_cfg.model.enhancement_strength,
         )
 
-        final_name = f"{job.stem}_iris3.mp4"
+        model_tag = self.model_mgr.get_output_tag(self.cluster_cfg.model.name)
+        final_name = f"{job.stem}_{model_tag}.mp4"
         remote_dest = f"{self.cluster_cfg.storage.destination_dir}/{final_name}"
 
         if self.is_wsl:
@@ -230,6 +232,7 @@ ffprobe -v error -select_streams v:0 -show_entries stream=width,height,nb_frames
                 allow_crop=self.cluster_cfg.model.allow_crop,
                 src_w=w,
                 src_h=h,
+                enhancement_strength=self.cluster_cfg.model.enhancement_strength,
             )
             win_in = f"{self.win_unc_shm}\\active_in.mp4"
             win_out = f"{self.win_unc_shm}\\active_out.mp4"
@@ -361,6 +364,7 @@ stat -c %s "{remote_dest}" 2>/dev/null || echo 0
                 allow_crop=self.cluster_cfg.model.allow_crop,
                 src_w=w,
                 src_h=h,
+                enhancement_strength=self.cluster_cfg.model.enhancement_strength,
             )
             safe_node_name = self.node_cfg.name.replace("(", "").replace(")", "").replace("|", "-")
             meta_comment = f"Topaz Video 4K - Node: {safe_node_name} - model={self.cluster_cfg.model.name} src={w}x{h} out={out_w}x{out_h}"

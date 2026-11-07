@@ -192,6 +192,7 @@ mount | grep -q '{self.ramdisk_mount}' && echo RAMDISK_READY || echo RAMDISK_MIS
             allow_crop=self.cluster_cfg.model.allow_crop,
             src_w=w,
             src_h=h,
+            enhancement_strength=self.cluster_cfg.model.enhancement_strength,
         )
 
         meta_comment = f"Topaz Video 4K | Node: {self.node_cfg.name} | model={self.cluster_cfg.model.name} src={w}x{h} out={out_w}x{out_h}"
@@ -232,7 +233,8 @@ stat -f %z "{m_out}" 2>/dev/null || echo 0
             return False, 0, elapsed, 0.0
 
         fps = (nb_frames / elapsed) if nb_frames > 0 else 0.0
-        final_name = f"{job.stem}_iris3.mp4"
+        model_tag = self.model_mgr.get_output_tag(self.cluster_cfg.model.name)
+        final_name = f"{job.stem}_{model_tag}.mp4"
         remote_dest = f"{self.cluster_cfg.storage.destination_dir}/{final_name}"
 
         # Stream directly from macOS volatile RAMDisk to destination archive

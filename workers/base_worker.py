@@ -9,6 +9,7 @@ from typing import Optional, Tuple, Union
 from pathlib import Path
 
 from ..core.config import ClusterConfig, NodeConfig
+from ..core.model_manager import ModelManager
 from ..core.queue_manager import JobItem, QueueManager
 from ..core.storage_guardian import StorageGuardian
 
@@ -85,6 +86,15 @@ class BaseWorker(abc.ABC, threading.Thread):
                 time.sleep(10)
                 continue
 
+            model_spec = ModelManager(self.cluster_cfg.model.name).get_model_spec()
+            if self.node_cfg.accelerator.lower() == "linux_cuda" and not model_spec.supports_linux_deb:
+                self.logger.warning(
+                    "[%s] Local Starlight model '%s' is not supported on native Linux .deb distros (Windows Virtualization with PCIe GPU passthrough via TopazWindowsWorker or macOS TopazMacWorker is required). Skipping Linux worker.",
+                    self.node_id,
+                    model_spec.name,
+                )
+                break
+
             # Find next unclaimed, uncompleted job from the dynamically reloaded queue
             done_stems = self.queue_mgr.fetch_completed_stems()
             next_job: Optional[JobItem] = None
@@ -125,11 +135,13 @@ class BaseWorker(abc.ABC, threading.Thread):
                 success, out_bytes, elapsed, fps = self.process_job(job)
                 if success and out_bytes > 1048576:
                     self.completed_count += 1
+                    model_tag = ModelManager.get_output_tag(self.cluster_cfg.model.name)
                     self.logger.info(
-                        "[%s #%d] VERIFIED DELIVERABLE: %s_iris3.mp4 (%.1f MiB | %.2f FPS | %dm%02ds)",
+                        "[%s #%d] VERIFIED DELIVERABLE: %s_%s.mp4 (%.1f MiB | %.2f FPS | %dm%02ds)",
                         self.node_id,
                         self.completed_count,
                         job.stem,
+                        model_tag,
                         out_bytes / (1024 * 1024),
                         fps,
                         int(elapsed) // 60,

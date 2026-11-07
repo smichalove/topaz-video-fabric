@@ -148,6 +148,7 @@ class TopazLinuxWorker(BaseWorker):
             allow_crop=self.cluster_cfg.model.allow_crop,
             src_w=w,
             src_h=h,
+            enhancement_strength=self.cluster_cfg.model.enhancement_strength,
         )
         tvai_filter = tvai_filter.replace(":estimate=8", "").replace(":vram=1:", ":vram=0.8:")
 
@@ -314,7 +315,8 @@ export TMPDIR="{r_shm}/hb_tmp"
             return False, 0, elapsed, 0.0
 
         fps = (nb_frames / elapsed) if nb_frames > 0 else 0.0
-        final_name = f"{job.stem}_iris3.mp4"
+        model_tag = self.model_mgr.get_output_tag(self.cluster_cfg.model.name)
+        final_name = f"{job.stem}_{model_tag}.mp4"
         remote_dest = f"{self.cluster_cfg.storage.destination_dir}/{final_name}"
         remote_part = f"{remote_dest}.part"
 

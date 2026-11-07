@@ -65,10 +65,13 @@ Confirm every enabled node reports `PASS` (or `WARN (DEMAND)` for unmounted macO
    - Near-square (`1:1`) sources snap to `2160x2160`, and wider-delta sources (such as `4:3` `640x480` / `640x464`) preserve their uncropped native aspect ratio inside the 4K bounding box (`ModelManager.compute_native_4k_dims`).
    - Passing `--allow-crop` (`allow_crop=True`) forces center-crop fill across all sources, and `--rm-source` (`delete_source_after_render=True`) deletes each source video after its 4K deliverable is byte-verified.
 
-4. **Hardware Instance Bounds & Iris-3 `scale=2` Rule:**
-   - **Apple Silicon (`ane`, `ane_gpu`, `metal`):** `instances` must remain `1` because the Apple Neural Engine hardware queue strictly serializes neural graph execution.
-   - **NVIDIA (`cuda`, `linux_cuda`):** `instances` may be configured between `1` and `3` depending on VRAM capacity (`16 GB - 32 GB`).
+4. **Hardware Instance Bounds, Iris-3 `scale=2` Rule & Local Project Starlight Support:**
+   - **Apple Silicon (`ane`, `ane_gpu`, `metal`):** `instances` must remain `1` for GAN models (`0` for Starlight `neuroserver` models) because the Apple Neural Engine hardware queue strictly serializes neural graph execution.
+   - **NVIDIA (`cuda`, `linux_cuda`):** `instances` may be configured between `1` and `3` depending on VRAM capacity (`16 GB - 32 GB`) for TensorRT GAN models (`iris-3`, `rhea-1`, `prob-4`, `nyx-3`).
    - **Iris-3 `scale=2`:** Default `iris-3` 4K upscaling to `scale=2` followed by `scale=w=<out_w>:h=<out_h>:flags=lanczos:threads=0,setsar=1:1` (unlocks native `-2x-13-ane-mlp` ANE weights on macOS and boosts NVIDIA TensorRT throughput by `2.6x`).
+   - **Local Project Starlight Models (`slp-2.5` / `starlight`, `astrasharp` / `starlight-sharp`, `astrafast` / `starlight-fast`, `astrahq` / `starlight-hq`, `astra` / `starlight-creative`, `slm-1` / `starlight-mini`):**
+     - Local Starlight (`neuroserver`) models are **not** supported on native Linux `.deb` distributions (`TopazVideoAIBETA`).
+     - To run local Starlight models on a Linux GPU server, **Windows Virtualization (KVM/QEMU with PCIe VFIO GPU passthrough)** is required and orchestrated via `TopazWindowsWorker` (`vm_temp_dir`), or run on macOS Apple Silicon (`TopazMacWorker`) / native Windows (`TopazWindowsWorker`). Native `linux_cuda` workers automatically detect `supports_linux_deb == False` and skip Starlight jobs cleanly.
 
 ---
 

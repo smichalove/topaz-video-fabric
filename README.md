@@ -60,10 +60,10 @@ While generating dozens or hundreds of base-resolution clips in the cloud takes 
     - **On-the-Fly Disable (`enabled: false`):** Flipping an active node to `enabled: false` lets it finish its current in-flight video and cleanly pause without losing a single frame.
     - **On-the-Fly Hot-Join (`enabled: true` or New Node Added):** Enabling a previously disabled node or adding a brand-new node entry to `cluster_config.yaml` while the orchestrator is running automatically spawns a new fabric worker thread within 15 seconds (`sync_dynamic_nodes()`).
     - **Live Parameter Tuning:** Adjusting `instances`, `priority_tiers`, `min_free_gb`, or `source_dir` takes effect immediately on the next job cycle.
-- **Iris-3 `scale=2` Hardware Optimization:**
-  - Uses `tvai_up=model=iris-3:scale=2` followed by high-precision Lanczos scaling to 4K.
-  - On **Apple Silicon**, `scale=2` engages the native Apple Neural Engine (`-2x-13-ane-mlp`) weights rather than falling back to legacy CPU/Espresso paths.
-  - On **NVIDIA TensorRT**, `scale=2` increases throughput by **2.6x** compared to `scale=4` while preserving visual fidelity.
+- **Iris-3 `scale=2` & Local Project Starlight / NeuroStream Diffusion Support (`slp-2.5`, `astrasharp`, `astrafast`, `astrahq`, `astra`, `slm-1`):**
+  - **Iris-3 `scale=2` Optimization:** Uses `tvai_up=model=iris-3:scale=2` followed by high-precision Lanczos scaling to 4K (`-2x-13-ane-mlp` native ANE weights on Apple Silicon; **2.6x** faster on NVIDIA TensorRT compared to `scale=4`).
+  - **First-Class Local Project Starlight / NeuroStream Support (`--model starlight-sharp`, `slp-2.5`, `astrafast`, `astrahq`, `astra`, `slm-1`):** Full CLI and YAML support for Topaz Video 7.x+ local temporal diffusion models (`neuroserver`), including `--starlight-strength {0.7,1.0,1.3}` for Starlight Sharp / Fast / HQ / Astra.
+  - **Platform Guard & Windows Virtualization for Linux GPU Servers:** Local Starlight (`neuroserver`) models are only shipped by Topaz Labs for **macOS (`Topaz Video` 7.x+)** and **Windows (`Topaz Video` 7.x+)**—they are **not** supported on native Ubuntu/Debian Linux `.deb` distros. On bare-metal Linux GPU servers (e.g., Tesla V100 or headless RTX servers), **Windows Virtualization (KVM/QEMU with VFIO PCIe GPU passthrough)** is required and natively orchestrated by `TopazWindowsWorker` (`vm_temp_dir`), while native `linux_cuda` `.deb` workers automatically skip Starlight jobs with a clear warning.
 - **Dynamic Source Discovery & SHA-256 Deduplication:**
   - Continuously scans the source directory for newly added clips, computes fast content hashes (`SHA-256` of the first `1 MiB` + byte size) to skip duplicate clips saved under different filenames, and automatically skips clips that are already `>= 4K`.
 - **Atomic Lock Leasing & Byte-Verified Delivery:**
@@ -245,17 +245,35 @@ Topaz Labs provides Linux `.deb` builds (installed under `/opt/TopazVideoAIBETA`
    /opt/TopazVideoAIBETA/bin/ffmpeg -hide_banner -filters | grep tvai_up
    ```
 
-#### B. Setting Up Windows NVIDIA Nodes via WSL2 Shared DRAM (`TopazWindowsWorker`)
+#### B. Setting Up Windows NVIDIA Nodes (WSL2 Shared DRAM or KVM/QEMU Windows Virtualization for Local Starlight)
 
-On Windows workstations with high-end NVIDIA GPUs, `TopazWindowsWorker` avoids writing temporary video files to `C:\Temp` (NTFS SSD) by staging inside WSL2's `/dev/shm` RAMDisk and invoking Windows `ffmpeg.exe` against the `\\wsl.localhost\<DistroName>\dev\shm\...` UNC path:
+On Windows workstations with high-end NVIDIA GPUs—or on **Linux bare-metal GPU servers running Windows Virtualization (KVM/QEMU with PCIe VFIO GPU passthrough)**—`TopazWindowsWorker` supports two execution modes:
 
-1. Install **Topaz Video AI** on Windows (`C:\Program Files\Topaz Labs LLC\Topaz Video\ffmpeg.exe`).
-2. Install **WSL2** (`wsl --install -d Ubuntu`) and enable OpenSSH Server inside WSL2 so the orchestrator can SSH directly into the WSL2 environment.
-3. Verify the UNC path from PowerShell:
-   ```powershell
-   Test-Path "\\wsl.localhost\Ubuntu\dev\shm"
-   ```
-4. Configure the node in `config/cluster_config.local.yaml` with `accelerator: "cuda"`, `wsl_shm_dir: "/dev/shm/topaz_win_ram"`, and `win_unc_shm: "\\\\wsl.localhost\\Ubuntu\\dev\\shm\\topaz_win_ram"`.
+1. **Mode 1 — Windows Workstation via WSL2 Shared DRAM (`wsl_shm_dir` + `win_unc_shm`):**
+   Avoids writing temporary video files to `C:\Temp` (NTFS SSD) by staging inside WSL2's `/dev/shm` RAMDisk and invoking Windows `ffmpeg.exe` against the `\\wsl.localhost\<DistroName>\dev\shm\...` UNC path:
+   - Install **Topaz Video AI** on Windows (`C:\Program Files\Topaz Labs LLC\Topaz Video\ffmpeg.exe`).
+   - Install **WSL2** (`wsl --install -d Ubuntu`) and enable OpenSSH Server inside WSL2.
+   - Verify the UNC path from PowerShell (`Test-Path "\\wsl.localhost\Ubuntu\dev\shm"`).
+   - Configure the node in `config/cluster_config.local.yaml` with `accelerator: "cuda"`, `wsl_shm_dir: "/dev/shm/topaz_win_ram"`, and `win_unc_shm: "\\\\wsl.localhost\\Ubuntu\\dev\\shm\\topaz_win_ram"`.
+
+2. **Mode 2 — Linux Bare-Metal GPU Servers via Windows Virtualization (`vm_temp_dir` — Required for Local Starlight on Linux Hosts):**
+   - **Why Windows Virtualization is Required on Linux for Local Starlight:** Topaz Labs does **not** ship `neuroserver` or local **Project Starlight** models (`slp-2.5` / `slp26`, `astrasharp`, `astrafast`, `astrahq`, `astra`, `slm-1`) for native Linux `.deb` distributions (`TopazVideoAIBETA`).
+   - To run local Starlight temporal diffusion models on a Linux GPU server (such as a headless `Tesla V100 32GB` or `RTX 4090/5080` Linux host), attach the NVIDIA GPU via **VFIO PCIe passthrough to a Windows Server / Windows 11 KVM/QEMU VM** with an encrypted scratch disk (`D:\Temp`), install Windows Topaz Video 7.x+, and configure `TopazWindowsWorker` with `vm_temp_dir: "D:/Temp"`.
+
+### Supported Models & Local Project Starlight Dictionary
+
+| CLI `--model` ID | Friendly CLI Aliases | Official Topaz Name | Engine / Backend | Native Linux `.deb`? | Primary Use Case & Hardware Notes |
+| :--- | :--- | :--- | :--- | :---: | :--- |
+| **`iris-3`** *(Default)* | `iris`, `iris3` | **Iris MQ v3** | TensorRT / Apple ANE | Yes | Fast face restoration, denoise, and detail recovery (`scale=2` engages native ANE on macOS & `2.6x` speedup on NVIDIA). |
+| **`rhea-1`** | `rhea`, `rhea1` | **Rhea v1** | TensorRT / CoreML | Yes | 4x generative detail reconstruction for SD/HD sources. |
+| **`prob-4`** | `proteus`, `prob4` | **Proteus v4** | TensorRT / CoreML | Yes | General-purpose enhancement for clean or lightly compressed video. |
+| **`nyx-3`** | `nyx`, `nyx3` | **Nyx v3** | TensorRT / CoreML | Yes | Temporal denoise for high-ISO footage. |
+| **`astrasharp`** | `starlight-sharp`, `astra-sharp` | **Starlight Sharp (Pro)** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | Crisp edge & small-face recovery with reduced lattice/flicker (`>=16GB VRAM` or Apple Silicon Max/Ultra; supports `--starlight-strength 0.7\|1.0\|1.3`). |
+| **`slp-2.5`** | `starlight`, `starlight-precise`, `slp26` | **Starlight Precise v2.5** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | Multi-frame latent diffusion preserving geometry/identity (`scale=1` diffusion + Lanczos 4K). |
+| **`astrafast`** | `starlight-fast`, `astra-fast` | **Starlight Fast** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | Step-distilled temporal diffusion for `2x-3x` faster local Starlight throughput. |
+| **`astrahq`** | `starlight-hq`, `astra-hq` | **Starlight HQ** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | High-quality temporal diffusion restoration. |
+| **`astra`** | `starlight-creative` | **Astra / Starlight Creative** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | Generative creative upscaler that synthesizes natural surface texture on AI/CGI video. |
+| **`slm-1`** | `starlight-mini`, `slm` | **Starlight Mini v1** | ONNX / CoreML / DirectML | **No** *(Win / Win-VM / macOS)* | Consumer local diffusion model for low-resolution inputs. |
 
 > [!TIP]
 > **Dual-Queue Saturation on Flagship GPUs (e.g., RTX 5080 / 4090):**
@@ -320,6 +338,13 @@ python3 -m topaz_cluster.orchestrator \
   --width 3840 \
   --height 2160 \
   --allow-crop \
+  --rm-source
+
+# Run Local Project Starlight (Starlight Sharp / Starlight Precise / Starlight Mini) on macOS or Windows / Windows KVM-VFIO VM nodes:
+python3 -m topaz_cluster.orchestrator \
+  --model starlight-sharp \
+  --starlight-strength 1.0 \
+  --scale 2 \
   --rm-source
 ```
 

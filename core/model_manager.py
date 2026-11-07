@@ -18,6 +18,39 @@ class ModelSpec:
     default_blend: float
     max_instances_nvidia: int
     max_instances_apple: int
+    is_starlight: bool = False
+    is_neuroserver: bool = False
+    supports_linux_deb: bool = True
+    supports_enhancement_strength: bool = False
+
+
+# Friendly CLI aliases mapped to canonical Topaz model IDs
+MODEL_ALIASES: Dict[str, str] = {
+    "iris": "iris-3",
+    "iris3": "iris-3",
+    "rhea": "rhea-1",
+    "rhea1": "rhea-1",
+    "proteus": "prob-4",
+    "prob4": "prob-4",
+    "nyx": "nyx-3",
+    "nyx3": "nyx-3",
+    # Project Starlight / NeuroStream local models (macOS & Windows Topaz Video 7.x+)
+    "starlight": "slp-2.5",
+    "starlight-precise": "slp-2.5",
+    "slp": "slp-2.5",
+    "slp25": "slp-2.5",
+    "slp26": "slp-2.5",
+    "starlight-mini": "slm-1",
+    "slm": "slm-1",
+    "slm1": "slm-1",
+    "starlight-sharp": "astrasharp",
+    "astra-sharp": "astrasharp",
+    "starlight-fast": "astrafast",
+    "astra-fast": "astrafast",
+    "starlight-hq": "astrahq",
+    "astra-hq": "astrahq",
+    "starlight-creative": "astra",
+}
 
 
 # Catalog of supported Topaz Video AI models and hardware execution profiles
@@ -66,22 +99,126 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         max_instances_nvidia=1,
         max_instances_apple=1,
     ),
+    # === Project Starlight / NeuroStream Local Temporal Diffusion Models (Windows & macOS 7.x+) ===
+    "slp-2.5": ModelSpec(
+        name="slp-2.5",
+        display_name="Starlight Precise v2.5 (slp26)",
+        description="Multi-frame temporal latent diffusion preserving geometry/identity while reconstructing micro-textures (Windows/macOS neuroserver).",
+        supports_scale_2=False,
+        recommended_scale=1,
+        default_blur=0.0,
+        default_blend=0.0,
+        max_instances_nvidia=0,
+        max_instances_apple=0,
+        is_starlight=True,
+        is_neuroserver=True,
+        supports_linux_deb=False,
+        supports_enhancement_strength=False,
+    ),
+    "astrasharp": ModelSpec(
+        name="astrasharp",
+        display_name="Starlight Sharp (Astra Sharp)",
+        description="Pro temporal diffusion tuned for crisp edge recovery, small faces, and reduced lattice/flicker on low-res inputs (Windows/macOS neuroserver, >=16GB VRAM).",
+        supports_scale_2=True,
+        recommended_scale=2,
+        default_blur=0.0,
+        default_blend=0.0,
+        max_instances_nvidia=0,
+        max_instances_apple=0,
+        is_starlight=True,
+        is_neuroserver=True,
+        supports_linux_deb=False,
+        supports_enhancement_strength=True,
+    ),
+    "astrafast": ModelSpec(
+        name="astrafast",
+        display_name="Starlight Fast (Astra Fast)",
+        description="Step-distilled temporal latent diffusion for 2x-3x faster diffusion throughput on low-res clips (Windows/macOS neuroserver).",
+        supports_scale_2=True,
+        recommended_scale=2,
+        default_blur=0.0,
+        default_blend=0.0,
+        max_instances_nvidia=0,
+        max_instances_apple=0,
+        is_starlight=True,
+        is_neuroserver=True,
+        supports_linux_deb=False,
+        supports_enhancement_strength=True,
+    ),
+    "astrahq": ModelSpec(
+        name="astrahq",
+        display_name="Starlight HQ (Astra HQ)",
+        description="High-quality temporal diffusion enhancement for degraded archival or generative video (Windows/macOS neuroserver).",
+        supports_scale_2=True,
+        recommended_scale=2,
+        default_blur=0.0,
+        default_blend=0.0,
+        max_instances_nvidia=0,
+        max_instances_apple=0,
+        is_starlight=True,
+        is_neuroserver=True,
+        supports_linux_deb=False,
+        supports_enhancement_strength=True,
+    ),
+    "astra": ModelSpec(
+        name="astra",
+        display_name="Astra / Starlight Creative",
+        description="Generative creative diffusion upscaler that synthesizes natural surface texture and skin detail on AI/CGI video (Windows/macOS neuroserver).",
+        supports_scale_2=True,
+        recommended_scale=2,
+        default_blur=0.0,
+        default_blend=0.0,
+        max_instances_nvidia=0,
+        max_instances_apple=0,
+        is_starlight=True,
+        is_neuroserver=True,
+        supports_linux_deb=False,
+        supports_enhancement_strength=True,
+    ),
+    "slm-1": ModelSpec(
+        name="slm-1",
+        display_name="Starlight Mini v1",
+        description="Consumer local diffusion model for low-quality inputs (bundled ONNX/CoreML/DirectML).",
+        supports_scale_2=True,
+        recommended_scale=2,
+        default_blur=0.0,
+        default_blend=0.0,
+        max_instances_nvidia=0,
+        max_instances_apple=0,
+        is_starlight=True,
+        is_neuroserver=False,
+        supports_linux_deb=False,
+        supports_enhancement_strength=False,
+    ),
 }
 
 
 class ModelManager:
     """Central abstraction for Topaz neural models, hardware profiles, and filter graphs."""
 
+    @staticmethod
+    def resolve_model_name(model_name: str) -> str:
+        """Resolve friendly CLI aliases (e.g. 'starlight-sharp' -> 'astrasharp', 'starlight' -> 'slp-2.5')."""
+        clean = model_name.strip().lower()
+        return MODEL_ALIASES.get(clean, clean)
+
     def __init__(self, default_model: str = "iris-3"):
-        if default_model not in MODEL_REGISTRY:
-            raise ValueError(f"Unknown model '{default_model}'. Supported: {list(MODEL_REGISTRY.keys())}")
-        self.default_model = default_model
+        resolved = self.resolve_model_name(default_model)
+        if resolved not in MODEL_REGISTRY:
+            raise ValueError(f"Unknown model '{default_model}'. Supported: {list(MODEL_REGISTRY.keys())} (or aliases: {list(MODEL_ALIASES.keys())})")
+        self.default_model = resolved
 
     def get_model_spec(self, model_name: Optional[str] = None) -> ModelSpec:
-        name = model_name or self.default_model
+        name = self.resolve_model_name(model_name) if model_name else self.default_model
         if name not in MODEL_REGISTRY:
             raise ValueError(f"Model '{name}' not found in registry.")
         return MODEL_REGISTRY[name]
+
+    @staticmethod
+    def get_output_tag(model_name: str) -> str:
+        """Return compact filename tag for deliverable suffix (e.g. 'iris-3' -> 'iris3', 'slp-2.5' -> 'slp25')."""
+        resolved = ModelManager.resolve_model_name(model_name)
+        return resolved.replace("-", "").replace(".", "")
 
     def get_optimal_instances(self, accelerator_type: str, model_name: Optional[str] = None) -> int:
         """Return the empirically verified maximum safe instances for the target accelerator."""
@@ -184,6 +321,7 @@ class ModelManager:
         src_w: int = 0,
         src_h: int = 0,
         smart_crop: bool = True,
+        enhancement_strength: float = 1.0,
     ) -> str:
         """Generate canonical Topaz filter graph with smart aspect-ratio & auto-crop optimization."""
         spec = self.get_model_spec(model_name)
@@ -195,11 +333,20 @@ class ModelManager:
         if not (0 <= instances <= 3):
             raise ValueError(f"Topaz instances={instances} out of range [0, 3].")
 
-        model_params = (
-            f"model={spec.name}:scale={active_scale}:preblur=0:noise=0:details=0:halo=0:"
-            f"blur={active_blur:.2f}:compression=0:estimate=8:blend={active_blend:.2f}:"
-            f"device={device_id}:vram=1:instances={instances}"
-        )
+        if spec.is_starlight:
+            # Project Starlight / NeuroStream models are standalone diffusion models (no GAN preblur/noise/estimate params)
+            sl_instances = 0
+            model_params = f"model={spec.name}:scale={active_scale}:device={device_id}:vram=1:instances={sl_instances}"
+            if spec.supports_enhancement_strength:
+                # Allowed values in Astra/Starlight JSON: 0.7, 1.0, 1.3
+                valid_strength = min((0.7, 1.0, 1.3), key=lambda v: abs(v - float(enhancement_strength)))
+                model_params += f":parameters=enhancement_strength={valid_strength}"
+        else:
+            model_params = (
+                f"model={spec.name}:scale={active_scale}:preblur=0:noise=0:details=0:halo=0:"
+                f"blur={active_blur:.2f}:compression=0:estimate=8:blend={active_blend:.2f}:"
+                f"device={device_id}:vram=1:instances={instances}"
+            )
 
         out_w, out_h, use_crop = self.compute_smart_4k_framing(
             src_w=src_w,

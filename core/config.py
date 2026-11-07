@@ -34,6 +34,7 @@ class ModelConfig:
     blend: float = 0.20
     allow_crop: bool = False
     force_condition: bool = False
+    enhancement_strength: float = 1.0
 
 
 @dataclass
@@ -112,8 +113,11 @@ def load_cluster_config(config_path: Optional[Path] = None, env_path: Optional[U
     force_cond_val = get_val("TOPAZ_FORCE_CONDITION", model_data.get("force_condition", False))
     if isinstance(force_cond_val, str):
         force_cond_val = force_cond_val.lower() in ("1", "true", "yes")
+    from .model_manager import ModelManager
+    raw_model_name = str(get_val("TOPAZ_MODEL", get_val("TOPAZ_MODEL_NAME", model_data.get("name", "iris-3"))))
+    resolved_model_name = ModelManager.resolve_model_name(raw_model_name)
     model_cfg = ModelConfig(
-        name=str(get_val("TOPAZ_MODEL", model_data.get("name", "iris-3"))),
+        name=resolved_model_name,
         scale=int(get_val("TOPAZ_SCALE", model_data.get("scale", 2))),
         target_width=int(get_val("TOPAZ_TARGET_WIDTH", model_data.get("target_width", 3840))),
         target_height=int(get_val("TOPAZ_TARGET_HEIGHT", model_data.get("target_height", 2160))),
@@ -122,6 +126,7 @@ def load_cluster_config(config_path: Optional[Path] = None, env_path: Optional[U
         blend=float(model_data.get("blend", 0.20)),
         allow_crop=bool(allow_crop_val),
         force_condition=bool(force_cond_val),
+        enhancement_strength=float(get_val("TOPAZ_STARLIGHT_STRENGTH", model_data.get("enhancement_strength", 1.0))),
     )
 
     cluster_data = data.get("cluster", {})

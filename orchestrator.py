@@ -77,8 +77,20 @@ def main() -> int:
     parser.add_argument("--source", type=str, default=None, help="Override source directory")
     parser.add_argument("--dest", type=str, default=None, help="Override destination directory")
     parser.add_argument("--min-free-gb", type=float, default=None, help="Minimum destination free space (GB)")
-    parser.add_argument("--model", type=str, default=None, help="Override Topaz model (e.g. iris-3, rhea-1, prob-4, nyx-3)")
-    parser.add_argument("--scale", type=int, default=None, help="Override neural scale factor (e.g. 2, 4, 0)")
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Override Topaz model: iris-3, rhea-1, prob-4, nyx-3, or local Project Starlight models (Windows/macOS only): slp-2.5 (starlight), astrasharp (starlight-sharp), astrafast (starlight-fast), astrahq (starlight-hq), astra (starlight-creative), slm-1 (starlight-mini)",
+    )
+    parser.add_argument("--scale", type=int, default=None, help="Override neural scale factor (e.g. 1, 2, 4, 0)")
+    parser.add_argument(
+        "--starlight-strength",
+        type=float,
+        choices=[0.7, 1.0, 1.3],
+        default=None,
+        help="Enhancement strength for Starlight Sharp / Fast / HQ / Astra models (0.7, 1.0, or 1.3; default: 1.0)",
+    )
     parser.add_argument("--width", type=int, default=None, help="Override target bounding width (default: 3840)")
     parser.add_argument("--height", type=int, default=None, help="Override target bounding height (default: 2160)")
     parser.add_argument("--allow-crop", action="store_true", help="Enable center-crop fill (force_original_aspect_ratio=increase,crop=W:H)")
@@ -102,6 +114,8 @@ def main() -> int:
         os.environ["TOPAZ_MODEL"] = args.model
     if args.scale is not None:
         os.environ["TOPAZ_SCALE"] = str(args.scale)
+    if args.starlight_strength is not None:
+        os.environ["TOPAZ_STARLIGHT_STRENGTH"] = str(args.starlight_strength)
     if args.width is not None:
         os.environ["TOPAZ_TARGET_WIDTH"] = str(args.width)
     if args.height is not None:

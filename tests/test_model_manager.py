@@ -108,3 +108,32 @@ def test_smart_4k_framing_auto_crop_optimization():
     filt_4_3 = mgr.build_filter("iris-3", scale=2, src_w=640, src_h=464)
     assert "crop=" not in filt_4_3
     assert "scale=w=2980:h=2160" in filt_4_3
+
+
+def test_starlight_models_and_aliases():
+    mgr = ModelManager(default_model="starlight-sharp")
+    spec_sharp = mgr.get_model_spec()
+    assert spec_sharp.name == "astrasharp"
+    assert spec_sharp.is_starlight is True
+    assert spec_sharp.is_neuroserver is True
+    assert spec_sharp.supports_linux_deb is False
+    assert spec_sharp.supports_enhancement_strength is True
+
+    # Verify all Starlight aliases resolve cleanly
+    assert ModelManager.resolve_model_name("starlight") == "slp-2.5"
+    assert ModelManager.resolve_model_name("slp26") == "slp-2.5"
+    assert ModelManager.resolve_model_name("starlight-mini") == "slm-1"
+    assert ModelManager.resolve_model_name("starlight-fast") == "astrafast"
+    assert ModelManager.resolve_model_name("starlight-hq") == "astrahq"
+    assert ModelManager.resolve_model_name("starlight-creative") == "astra"
+
+    # Starlight filter must omit GAN params (preblur/noise/estimate) and include enhancement_strength for Astra/Starlight Sharp
+    filt_sharp = mgr.build_filter("starlight-sharp", scale=2, src_w=1280, src_h=720, enhancement_strength=1.3)
+    assert "tvai_up=model=astrasharp:scale=2:device=0:vram=1:instances=0:parameters=enhancement_strength=1.3" in filt_sharp
+    assert "preblur=" not in filt_sharp
+    assert "estimate=" not in filt_sharp
+
+    # Starlight Precise (slp-2.5) filter
+    filt_slp = mgr.build_filter("slp-2.5", src_w=1280, src_h=720)
+    assert "tvai_up=model=slp-2.5:scale=1:device=0:vram=1:instances=0" in filt_slp
+    assert "parameters=" not in filt_slp
