@@ -1,0 +1,288 @@
+# topaz-video-fabric
+
+**Heterogeneous Zero-NAND DRAM-Staged 4K Video Upscaling Orchestrator for Apple Silicon (ANE + VideoToolbox) & NVIDIA (TensorRT + NVENC) Compute Fabrics**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Zero-NAND DRAM Staging](https://img.shields.io/badge/Storage-Zero--NAND%20DRAM-success.svg)](#key-architectural-features)
+
+---
+
+> [!IMPORTANT]
+> **Commercial Licensing & Trademark Disclaimer**
+>
+> `topaz-video-fabric` is an independent, open-source distributed queue, RAMDisk staging, and SSH orchestration framework. It is **not** affiliated with, endorsed by, or sponsored by **Topaz Labs LLC**.
+>
+> - **No Proprietary Assets Included:** This repository contains **zero** proprietary binaries, **zero** neural network model weights, and **zero** authentication/license tokens.
+> - **Bring Your Own License (BYOL):** To use this orchestrator, you must hold a valid, active license for **Topaz Video AI** from [Topaz Labs](https://www.topazlabs.com/) and authenticate your installation on the target worker node(s) in compliance with the Topaz Labs End User License Agreement (EULA), including multi-seat or Pro licensing requirements when operating across multiple machines.
+
+---
+
+## Overview
+
+Upscaling large archival video libraries to 4K using neural filters (`iris-3`, `rhea-1`, `prob-4`, `nyx-3`) is heavily compute-bound and traditionally suffers from three major bottlenecks:
+1. **SSD Wear & I/O Bottlenecks:** Staging intermediate conditioned files and multi-gigabyte 4K streams on internal NVMe SSDs causes massive NAND write amplification.
+2. **Heterogeneous OS Friction:** Combining macOS Apple Silicon machines (`M1`/`M2`/`M3`/`M4`), Linux CUDA servers, and Windows workstations into a single collision-free queue is difficult.
+3. **Aspect-Ratio Distortion & Duplicate Work:** Mixed archival collections contain variable resolutions (`464p`, `480p`, `720p`, `1080p`), portrait/square/landscape framing, and duplicate files under different names.
+
+`topaz-cluster` solves all three problems with a unified Python orchestrator (`concurrent.futures`) that coordinates either:
+- **Path A (Pure Apple Silicon macOS Path):** A clean, zero-friction setup for one or more Macs using native Apple Neural Engine (`ANE`) + `h264_videotoolbox` inside a volatile `hdiutil` HFS+ RAMDisk (`/Volumes/TopazRAM`).
+- **Path B (Heterogeneous Mixed Fabric):** A hybrid cluster combining **macOS Apple Silicon nodes**, **Native Linux / WSL2 NVIDIA CUDA nodes** (via `.deb` package installation), and **Windows NVIDIA GPU workstations** (bridged via WSL2 `/dev/shm` UNC paths).
+
+---
+
+## Key Architectural Features
+
+- **Zero-NAND Volatile DRAM Staging:**
+  - **macOS (`TopazMacWorker`):** Automatically mounts a volatile HFS+ RAMDisk at `/Volumes/TopazRAM` (`hdiutil attach -nomount ram://...`) and securely wipes (`rm -P`) every job upon completion. Zero writes touch the internal Apple SSD.
+  - **Linux & WSL2 (`TopazLinuxWorker`):** Stages raw inputs, audio/container conditioning (`hb_tmp`), and 4K NVENC outputs exclusively in `/dev/shm` (POSIX shared memory DRAM).
+  - **Windows (`TopazWindowsWorker`):** Reads and writes directly against WSL2 `/dev/shm` exposed over zero-copy local UNC paths (`\\wsl.localhost\<Distro>\dev\shm\...`).
+- **Native Aspect-Ratio 4K Scaling (Zero Stretching, Zero Cropping):**
+  - Automatically probes source dimensions (`width x height`) per clip and computes even-integer 4K bounding coordinates (`3840x2160` landscape or `2160x3840` portrait/square) with `setsar=1:1` and `flags=lanczos`.
+  - Enforces a strict `allow_crop=False` invariant so no pixels are ever cropped or stretched.
+- **Iris-3 `scale=2` Hardware Optimization:**
+  - Uses `tvai_up=model=iris-3:scale=2` followed by high-precision Lanczos scaling to 4K.
+  - On **Apple Silicon**, `scale=2` engages the native Apple Neural Engine (`-2x-13-ane-mlp`) weights rather than falling back to legacy CPU/Espresso paths.
+  - On **NVIDIA TensorRT**, `scale=2` increases throughput by **2.6x** compared to `scale=4` while preserving visual fidelity.
+- **Dynamic Source Discovery & SHA-256 Deduplication:**
+  - Continuously scans the source directory for newly added clips, computes fast content hashes (`SHA-256` of the first `1 MiB` + byte size) to skip duplicate clips saved under different filenames, and automatically skips clips that are already `>= 4K`.
+- **Atomic Lock Leasing & Byte-Verified Delivery:**
+  - Uses `O_EXCL` atomic lock files (`claimed_stems/<stem>.lock`) and verifies exact byte-size parity (`dest_bytes == out_bytes`) on the destination archive before marking a deliverable complete.
+- **Storage Guardian Capacity Gating:**
+  - Continuously monitors free disk space on the destination archive host and automatically pauses worker threads if free space drops below `min_free_gb` (default `25.0 GB`).
+
+---
+
+## System Architecture
+
+```mermaid
+flowchart TD
+    subgraph Orchestrator["Master Orchestrator (topaz-cluster)"]
+        CFG["Config & .env Loader\n(Dynamic Per-Cycle Reload)"]
+        QM["QueueManager\n(SHA-256 Dedup + O_EXCL Claims)"]
+        SG["StorageGuardian\n(>= 25 GB Free Space Gate)"]
+        SYS["SystemChecker (--syschk)\n(SSH, Binary, Model, DRAM Audit)"]
+        FD["FabricDispatcher\n(concurrent.futures ThreadPool)"]
+    end
+
+    subgraph ComputeFabric["Heterogeneous Worker Fabric (Zero-NAND DRAM)"]
+        MAC["TopazMacWorker (macOS)\nApple Silicon ANE + VideoToolbox\nRAMDisk: /Volumes/TopazRAM"]
+        LIN["TopazLinuxWorker (Linux / WSL2)\nNVIDIA TensorRT + h264_nvenc\nRAMDisk: /dev/shm/topaz_*"]
+        WIN["TopazWindowsWorker (Windows)\nNVIDIA TensorRT + h264_nvenc\nUNC Bridge: \\\\wsl.localhost\\...\\dev\\shm"]
+    end
+
+    subgraph Archive["Storage Archive Host"]
+        SRC["Source Media Directory"]
+        DST["Verified 4K Deliverables (*_iris3.mp4)"]
+    end
+
+    CFG --> FD
+    QM --> FD
+    SG --> FD
+    SYS --> FD
+    FD --> MAC
+    FD --> LIN
+    FD --> WIN
+    SRC --> MAC & LIN & WIN
+    MAC & LIN & WIN --> DST
+```
+
+---
+
+## Choose Your Setup Path
+
+Because setting up distributed GPU video upscaling can range from a single Mac to a multi-OS render farm, `topaz-cluster` supports two primary deployment paths.
+
+### Path 1: The Clean Apple Silicon macOS Path (Easiest Setup)
+
+Ideal if you have one or more Apple Silicon Macs (`Mac Mini M4`, `Mac Studio`, `MacBook Pro M1/M2/M3/M4 Max`) and want a clean, silent, low-power 4K upscaling pipeline with **zero SSD wear**.
+
+#### Prerequisites (macOS)
+1. Install **Topaz Video AI** (or **Topaz Video**) into `/Applications/Topaz Video.app` (or `/Applications/Topaz Video AI.app`) and sign in to activate your license and download the `iris-3` model weights.
+2. Enable **Remote Login (SSH)** on your Mac(s) (`System Settings -> General -> Sharing -> Remote Login`) and configure passwordless SSH keys (`ssh-copy-id <USER>@<MAC_HOST>`).
+3. Ensure `ffmpeg` and `ffprobe` (via Homebrew: `brew install ffmpeg`) are available on the orchestrator host.
+
+#### macOS Configuration (`config/cluster_config.local.yaml`)
+```yaml
+storage:
+  archive_host: "<USER>@127.0.0.1"
+  source_dir: "/Volumes/MediaDrive/SourceVideos"
+  destination_dir: "/Volumes/MediaDrive/Upscaled4K"
+  min_free_gb: 25.0
+
+model:
+  name: "iris-3"
+  scale: 2
+  target_width: 3840
+  target_height: 2160
+  scaling_filter: "lanczos"
+  allow_crop: false
+
+nodes:
+  mac_m4_primary:
+    enabled: true
+    name: "Apple M4 Mini (ANE)"
+    ssh_host: "<USER>@<MAC_MINI_IP>"
+    accelerator: "ane"
+    instances: 1  # Keep at 1: Apple Neural Engine serializes hardware queues
+    priority_tiers: ["464p", "480p", "720p", "1080p"]
+    ffmpeg_path: "/Applications/Topaz Video.app/Contents/MacOS/ffmpeg"
+    model_dir: "/Applications/Topaz Video.app/Contents/Resources/models"
+    ramdisk_mount: "/Volumes/TopazRAM"
+    ramdisk_size_mb: 3500
+```
+
+> [!TIP]
+> **Why `instances: 1` and `scale: 2` on macOS?**
+> The Apple Neural Engine (`ANE`) hardware queue strictly serializes neural graph dispatches, so `instances: 1` achieves maximum throughput without memory thrashing. Using `scale: 2` with `iris-3` engages the native `iris-v3-fgnet-fp16-...-2x-13-ane-mlp` ANE model before Lanczos scaling to 4K.
+
+---
+
+### Path 2: The Heterogeneous Mixed Fabric (Linux `.deb` + Windows WSL2 + macOS)
+
+Ideal if you want to combine Linux NVIDIA servers (`RTX 4060/4070/4090/5080`, `Tesla V100`), Windows gaming/creator workstations (`RTX 5080/4090`), and Apple Silicon Macs into a single unified render farm.
+
+#### A. Installing Topaz Video AI on Ubuntu / Debian Linux (`.deb` Package Guide)
+
+Topaz Labs provides Linux `.deb` builds (installed under `/opt/TopazVideoAIBETA`) for licensed users. You can either install the `.deb` system-wide or extract it into a user-space directory:
+
+1. **Prerequisites on Ubuntu (22.04 / 24.04 / 26.04 LTS):**
+   Ensure proprietary/open NVIDIA drivers with NVENC & TensorRT support (`nvidia-driver-570` / `580` / `615+`), Vulkan ICD loaders, and `ffmpeg` are installed:
+   ```bash
+   sudo apt update
+   sudo apt install -y ffmpeg libvulkan1 mesa-vulkan-drivers
+   nvidia-smi
+   ```
+
+2. **Option 1: Standard System-Wide `.deb` Installation:**
+   Download your licensed `TopazVideoAI-*.deb` package from your Topaz Labs account and install via `apt`:
+   ```bash
+   sudo apt install -y ./TopazVideoAI-*.deb
+   ```
+   This installs the Topaz `ffmpeg` binary and shared libraries to:
+   - Binary: `/opt/TopazVideoAIBETA/bin/ffmpeg`
+   - Libraries: `/opt/TopazVideoAIBETA/lib`
+   - Models: `/opt/TopazVideoAIBETA/models`
+
+3. **Option 2: Rootless / User-Space `.deb` Extraction (Also Works Inside WSL2 Ubuntu):**
+   If you prefer not to install the `.deb` into root `/opt` (or are running inside a secondary WSL2 distribution), extract the `.deb` directly into `~/topaz_linux`:
+   ```bash
+   mkdir -p ~/topaz_linux
+   dpkg-deb -x ./TopazVideoAI-*.deb ~/topaz_linux/
+   ```
+   Your paths in `cluster_config.local.yaml` will then be:
+   - `ffmpeg_path: "/home/<USER>/topaz_linux/opt/TopazVideoAIBETA/bin/ffmpeg"`
+   - `model_dir: "/home/<USER>/topaz_linux/opt/TopazVideoAIBETA/models"`
+
+4. **Authentication & Model Weights on Headless Linux Nodes:**
+   Authenticate your seat license (`login` token / `auth.tpz`) and populate the `models/` directory from a licensed installation on your primary workstation:
+   ```bash
+   # Verify the Linux Topaz FFmpeg binary loads its shared libraries and registers tvai_up:
+   LD_LIBRARY_PATH="/opt/TopazVideoAIBETA/lib" /opt/TopazVideoAIBETA/bin/ffmpeg -hide_banner -filters | grep tvai_up
+   ```
+
+#### B. Setting Up Windows NVIDIA Nodes via WSL2 Shared DRAM (`TopazWindowsWorker`)
+
+On Windows workstations with high-end NVIDIA GPUs, `TopazWindowsWorker` avoids writing temporary video files to `C:\Temp` (NTFS SSD) by staging inside WSL2's `/dev/shm` RAMDisk and invoking Windows `ffmpeg.exe` against the `\\wsl.localhost\<DistroName>\dev\shm\...` UNC path:
+
+1. Install **Topaz Video AI** on Windows (`C:\Program Files\Topaz Labs LLC\Topaz Video\ffmpeg.exe`).
+2. Install **WSL2** (`wsl --install -d Ubuntu`) and enable OpenSSH Server inside WSL2 so the orchestrator can SSH directly into the WSL2 environment.
+3. Verify the UNC path from PowerShell:
+   ```powershell
+   Test-Path "\\wsl.localhost\Ubuntu\dev\shm"
+   ```
+4. Configure the node in `config/cluster_config.local.yaml` with `accelerator: "cuda"`, `wsl_shm_dir: "/dev/shm/topaz_win_ram"`, and `win_unc_shm: "\\\\wsl.localhost\\Ubuntu\\dev\\shm\\topaz_win_ram"`.
+
+> [!TIP]
+> **Dual-Queue Saturation on Flagship GPUs (e.g., RTX 5080 / 4090):**
+> A single TensorRT `ffmpeg` process often utilizes only ~55-65% of a flagship GPU's compute cores due to host-to-device frame transfer intervals. You can configure **two** worker entries targeting the same physical GPU—one via `TopazWindowsWorker` (`accelerator: "cuda"`) and one via `TopazLinuxWorker` inside WSL2 (`accelerator: "linux_cuda"`)—to push GPU silicon utilization to 95-100%.
+
+---
+
+## Quickstart & CLI Usage
+
+### 1. Clone & Install
+```bash
+git clone https://github.com/<YOUR_USERNAME>/topaz-video-fabric.git
+cd topaz-video-fabric
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### 2. Configure Your Cluster
+Copy the example configuration to `config/cluster_config.local.yaml` (which is automatically loaded and gitignored so your private IPs and paths are never committed):
+```bash
+cp config/cluster_config.example.yaml config/cluster_config.local.yaml
+cp .env.example .env
+```
+
+### 3. Run Preflight Host Assurance (`--syschk`)
+Before starting a batch, audit SSH connectivity, Topaz `ffmpeg` binaries, `tvai_up` filter registration, model weight directories, volatile RAMDisk staging mounts, and GPU/ANE silicon across all enabled nodes:
+```bash
+python3 -m topaz_cluster.orchestrator --syschk
+```
+
+### 4. Inspect Queue Status & Dry-Run Prioritization
+```bash
+# View live queue counts, completed deliverables, and destination free space:
+python3 -m topaz_cluster.orchestrator --status
+
+# Preview each worker node's resolution-tier priority queue without starting encodes:
+python3 -m topaz_cluster.orchestrator --dry-run
+```
+
+### 5. Launch the Compute Fabric
+```bash
+# Launch all enabled nodes in config/cluster_config.local.yaml:
+python3 -m topaz_cluster.orchestrator
+
+# Override source/destination directories or run specific worker nodes on the fly:
+python3 -m topaz_cluster.orchestrator \
+  --source "/path/to/source_clips" \
+  --dest "/path/to/output_4k" \
+  --workers mac_node_1 linux_cuda_node_1
+```
+
+---
+
+## Running the Test Suite
+
+All core subsystems (`ClusterConfig`, `ModelManager`, `FilterBuilder`, `QueueManager`, `StorageGuardian`, `SystemChecker`, and `FabricDispatcher`) are covered by unit tests using mocked SSH/storage interfaces:
+
+```bash
+pytest -v
+```
+
+---
+
+## Repository Structure
+
+```text
+topaz_cluster/
+├── __init__.py
+├── orchestrator.py                 # CLI entrypoint (--syschk, --status, --dry-run, --workers)
+├── config/
+│   ├── cluster_config.yaml         # Sanitized default cluster configuration
+│   └── cluster_config.example.yaml # Annotated templates for macOS & Mixed Linux/Win/Mac setups
+├── core/
+│   ├── config.py                   # YAML + .env + cluster_config.local.yaml loader
+│   ├── fabric_dispatcher.py        # ThreadPoolExecutor lifecycle & dynamic config reload
+│   ├── filter_builder.py           # Canonical tvai_up filter string builder
+│   ├── model_manager.py            # Model registry (iris-3, rhea-1, prob-4, nyx-3) & 4K aspect math
+│   ├── queue_manager.py            # SHA-256 deduplication, dynamic source sync & O_EXCL claims
+│   ├── storage_guardian.py         # Destination free-space gate
+│   └── syschk.py                   # Parallel SSH preflight host assurance engine
+├── workers/
+│   ├── base_worker.py              # Abstract worker loop with hot-reload & atomic claim release
+│   ├── linux_worker.py             # Native Linux / WSL2 CUDA worker (/dev/shm DRAM)
+│   ├── mac_worker.py               # macOS Apple Silicon ANE worker (/Volumes/TopazRAM HFS+ DRAM)
+│   └── windows_worker.py           # Windows CUDA worker (WSL2 UNC DRAM bridge or encrypted VM disk)
+└── tests/                          # Pytest unit test suite
+```
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE). See [LICENSE](LICENSE) for full terms and third-party trademark/licensing disclaimers regarding Topaz Labs LLC.

@@ -1,0 +1,67 @@
+# Example Cluster Configuration Profiles for Topaz Video AI Orchestrator
+# Choose either the Pure Apple Silicon macOS Topology OR the Mixed Linux / Windows / macOS Topology.
+# Copy to config/cluster_config.local.yaml and replace <USER> and <HOST> placeholders.
+
+storage:
+  archive_host: "<USER>@<ARCHIVE_HOST>"
+  destination_dir: "/path/to/destination_4k"
+  source_dir: "/path/to/source_videos"
+  min_free_gb: 25.0
+  check_interval_seconds: 15
+
+model:
+  name: "iris-3"
+  scale: 2
+  target_width: 3840
+  target_height: 2160
+  scaling_filter: "lanczos"
+  blur: -0.10
+  blend: 0.20
+  allow_crop: false
+
+cluster:
+  staging_base_dir: "/dev/shm/topaz_stage"
+  claims_dir: "/dev/shm/topaz_stage/claimed_stems"
+  log_dir: "/dev/shm/topaz_stage"
+
+nodes:
+  # 1. macOS Apple Silicon Node (Volatile /Volumes/TopazRAM HFS+ DRAM Disk)
+  mac_node_1:
+    enabled: true
+    name: "Apple Silicon Node 1 (ANE)"
+    ssh_host: "<USER>@<MAC_HOST_1>"
+    accelerator: "ane"
+    device_id: 0
+    instances: 1
+    priority_tiers: ["464p", "480p", "720p", "1080p"]
+    ffmpeg_path: "/Applications/Topaz Video.app/Contents/MacOS/ffmpeg"
+    model_dir: "/Applications/Topaz Video.app/Contents/Resources/models"
+    ramdisk_mount: "/Volumes/TopazRAM"
+    ramdisk_size_mb: 3500
+
+  # 2. Native Linux NVIDIA CUDA Node (.deb installed or extracted)
+  linux_cuda_node_1:
+    enabled: true
+    name: "Linux CUDA Node 1 (TensorRT)"
+    ssh_host: "<USER>@<LINUX_HOST_1>"
+    accelerator: "linux_cuda"
+    device_id: 0
+    instances: 3
+    priority_tiers: ["1080p", "720p", "464p_reverse", "480p"]
+    ffmpeg_path: "/opt/TopazVideoAIBETA/bin/ffmpeg"
+    model_dir: "/opt/TopazVideoAIBETA/models"
+    wsl_shm_dir: "/dev/shm/topaz_cuda_ram"
+
+  # 3. Windows NVIDIA Node via WSL2 Shared /dev/shm UNC Path
+  windows_cuda_node_1:
+    enabled: true
+    name: "Windows CUDA Node 1 (WSL2 DRAM)"
+    ssh_host: "<USER>@<WINDOWS_HOST_1>"
+    accelerator: "cuda"
+    device_id: 0
+    instances: 3
+    priority_tiers: ["464p_reverse", "720p_reverse", "480p", "1080p_reverse"]
+    ffmpeg_path: "C:\\Program Files\\Topaz Labs LLC\\Topaz Video\\ffmpeg.exe"
+    model_dir: "C:\\ProgramData\\Topaz Labs LLC\\Topaz Video\\models"
+    wsl_shm_dir: "/dev/shm/topaz_win_ram"
+    win_unc_shm: "\\\\wsl.localhost\\Ubuntu\\dev\\shm\\topaz_win_ram"

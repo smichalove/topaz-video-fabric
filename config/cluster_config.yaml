@@ -1,0 +1,79 @@
+# Topaz Video AI Heterogeneous Cluster Configuration
+# Copy this file to config/cluster_config.local.yaml (gitignored) to configure your private hostnames and paths.
+
+storage:
+  archive_host: "<USER>@<ARCHIVE_HOST>"
+  destination_dir: "/path/to/destination_4k"
+  source_dir: "/path/to/source_videos"
+  min_free_gb: 25.0
+  check_interval_seconds: 15
+
+model:
+  name: "iris-3"
+  scale: 2
+  target_width: 3840
+  target_height: 2160
+  scaling_filter: "lanczos"
+  blur: -0.10
+  blend: 0.20
+  allow_crop: false
+
+cluster:
+  staging_base_dir: "/dev/shm/topaz_stage"
+  claims_dir: "/dev/shm/topaz_stage/claimed_stems"
+  log_dir: "/dev/shm/topaz_stage"
+
+nodes:
+  # Option A: Clean Apple Silicon macOS Path (ANE + VideoToolbox + Volatile HFS+ RAMDisk)
+  mac_apple_silicon_primary:
+    enabled: true
+    name: "Apple Silicon M-Series Node (ANE + VideoToolbox)"
+    ssh_host: "<USER>@<MAC_NODE_HOST>"
+    accelerator: "ane"
+    device_id: 0
+    instances: 1
+    priority_tiers: ["464p", "480p", "720p", "1080p"]
+    ffmpeg_path: "/Applications/Topaz Video.app/Contents/MacOS/ffmpeg"
+    model_dir: "/Applications/Topaz Video.app/Contents/Resources/models"
+    ramdisk_mount: "/Volumes/TopazRAM"
+    ramdisk_size_mb: 3500
+
+  mac_apple_silicon_secondary:
+    enabled: false
+    name: "Apple Silicon Max/Ultra Node (ANE + GPU)"
+    ssh_host: "<USER>@<MAC_NODE_2_HOST>"
+    accelerator: "ane_gpu"
+    device_id: 0
+    instances: 1
+    priority_tiers: ["1080p_reverse", "720p_reverse"]
+    ffmpeg_path: "/Applications/Topaz Video.app/Contents/MacOS/ffmpeg"
+    model_dir: "/Applications/Topaz Video.app/Contents/Resources/models"
+    ramdisk_mount: "/Volumes/TopazRAM"
+    ramdisk_size_mb: 3500
+
+  # Option B: Native Linux / WSL2 NVIDIA CUDA Path (.deb extracted or installed in /opt/TopazVideoAIBETA)
+  linux_cuda_primary:
+    enabled: true
+    name: "Linux NVIDIA CUDA Node (TensorRT + NVENC)"
+    ssh_host: "<USER>@127.0.0.1"
+    accelerator: "linux_cuda"
+    device_id: 0
+    instances: 3
+    priority_tiers: ["1080p", "720p", "480p", "464p"]
+    ffmpeg_path: "/opt/TopazVideoAIBETA/bin/ffmpeg"
+    model_dir: "/opt/TopazVideoAIBETA/models"
+    wsl_shm_dir: "/dev/shm/topaz_linux_cuda_ram"
+
+  # Option C: Windows NVIDIA GPU Node via WSL2 Shared DRAM (UNC Path)
+  windows_wsl_cuda:
+    enabled: false
+    name: "Windows NVIDIA GPU Node (WSL2 DRAM Bridge)"
+    ssh_host: "<USER>@<WINDOWS_WSL_HOST>"
+    accelerator: "cuda"
+    device_id: 0
+    instances: 3
+    priority_tiers: ["464p_reverse", "720p_reverse", "480p", "1080p_reverse"]
+    ffmpeg_path: "C:\\Program Files\\Topaz Labs LLC\\Topaz Video\\ffmpeg.exe"
+    model_dir: "C:\\ProgramData\\Topaz Labs LLC\\Topaz Video\\models"
+    wsl_shm_dir: "/dev/shm/topaz_win_ram"
+    win_unc_shm: "\\\\wsl.localhost\\Ubuntu\\dev\\shm\\topaz_win_ram"

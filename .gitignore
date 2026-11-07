@@ -1,0 +1,40 @@
+# Local / Private Cluster Configs & Environment
+.env
+.env.*
+!.env.example
+*.local.yaml
+*.local.yml
+config/cluster_config.local.yaml
+
+# Python Bytecode & Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Runtime Staging, Manifests & Media
+*.log
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.part
+*.lock
+*manifest.json
+claimed_stems/
+
+# OS & Editor Metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
