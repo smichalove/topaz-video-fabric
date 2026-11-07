@@ -174,11 +174,44 @@ Topaz Labs provides Linux `.deb` builds (installed under `/opt/TopazVideoAIBETA`
    - `ffmpeg_path: "/home/<USER>/topaz_linux/opt/TopazVideoAIBETA/bin/ffmpeg"`
    - `model_dir: "/home/<USER>/topaz_linux/opt/TopazVideoAIBETA/models"`
 
-4. **Authentication & Model Weights on Headless Linux Nodes:**
-   Authenticate your seat license (`login` token / `auth.tpz`) and populate the `models/` directory from a licensed installation on your primary workstation:
+4. **Headless OAuth Authentication (`auth.tpz` Transfer) & Model Weights on Linux / WSL2:**
+   Because headless Linux servers and WSL2 distributions do not run a desktop GUI browser to catch the OAuth2 redirect callback, `ffmpeg` will fail with an unauthenticated filter error unless a valid `auth.tpz` OAuth token is present inside `$TVAI_MODEL_DATA_DIR` (`/opt/TopazVideoAIBETA/models/auth.tpz`).
+
+   You can authenticate a licensed headless Linux or WSL2 node using **either** of two methods:
+
+   - **Method A — OAuth Token Transfer (`auth.tpz`) from an Authenticated GUI Workstation *(Recommended for Headless / WSL2)*:**
+     1. Sign in to the **Topaz Video AI** desktop application on your primary licensed **Windows** or **macOS** workstation so it completes the browser OAuth2 handshake and writes `auth.tpz`.
+     2. Locate `auth.tpz` (and your downloaded `.tz` / `.json` model files) on your GUI machine:
+        - **macOS:** `/Applications/Topaz Video.app/Contents/Resources/models/auth.tpz` *(or `/Applications/Topaz Video AI.app/Contents/Resources/models/auth.tpz`)*
+        - **Windows:** `C:\ProgramData\Topaz Labs LLC\Topaz Video\models\auth.tpz` *(or `C:\ProgramData\Topaz Labs LLC\Topaz Video AI\models\auth.tpz`)*
+     3. Copy `auth.tpz` (and any needed `.tz` / `.json` model weights such as `iris-3.json` and `iris-v3-*.tz`) over SSH (`scp` / `rsync`) into the Linux node's `models/` directory and restrict its permissions:
+        ```bash
+        # Copy OAuth token and model weights from your licensed workstation to the headless Linux node:
+        scp "/Applications/Topaz Video.app/Contents/Resources/models/auth.tpz" <USER>@<LINUX_HOST>:/opt/TopazVideoAIBETA/models/auth.tpz
+        ssh <USER>@<LINUX_HOST> "chmod 600 /opt/TopazVideoAIBETA/models/auth.tpz"
+        ```
+     *(If running inside WSL2 on the same Windows workstation, you can copy directly from `/mnt/c/ProgramData/Topaz Labs LLC/Topaz Video/models/auth.tpz` into your WSL2 `models/` directory.)*
+
+   - **Method B — Headless CLI OAuth Device Flow (`bin/login`):**
+     Run the bundled `login` binary on the Linux host, open the printed OAuth URL in any browser on your laptop, and complete sign-in:
+     ```bash
+     export LD_LIBRARY_PATH="/opt/TopazVideoAIBETA/lib"
+     export TVAI_MODEL_DIR="/opt/TopazVideoAIBETA/models"
+     export TVAI_MODEL_DATA_DIR="/opt/TopazVideoAIBETA/models"
+     /opt/TopazVideoAIBETA/bin/login
+     ```
+
+   > [!WARNING]
+   > **License & OAuth Token Security:**
+   > Your `auth.tpz` file contains your personal Topaz Labs OAuth session token. Only transfer `auth.tpz` to headless/WSL2 environments covered by your active Topaz Labs seat or Pro license agreement, keep file permissions restricted (`chmod 600`), and **never** commit `auth.tpz` or `.tz` weights to any Git repository.
+
+5. **Headless Vulkan ICD & EGL Vendor Library Configuration (No X11/Wayland Required):**
+   `TopazLinuxWorker` automatically exports `TVAI_MODEL_DIR`, `TVAI_MODEL_DATA_DIR`, `LD_LIBRARY_PATH`, `VK_ICD_FILENAMES`, and `__EGL_VENDOR_LIBRARY_FILENAMES`. To verify manually that the Linux Topaz `ffmpeg` binary loads its shared libraries and registers `tvai_up`:
    ```bash
-   # Verify the Linux Topaz FFmpeg binary loads its shared libraries and registers tvai_up:
-   LD_LIBRARY_PATH="/opt/TopazVideoAIBETA/lib" /opt/TopazVideoAIBETA/bin/ffmpeg -hide_banner -filters | grep tvai_up
+   LD_LIBRARY_PATH="/opt/TopazVideoAIBETA/lib" \
+   TVAI_MODEL_DIR="/opt/TopazVideoAIBETA/models" \
+   TVAI_MODEL_DATA_DIR="/opt/TopazVideoAIBETA/models" \
+   /opt/TopazVideoAIBETA/bin/ffmpeg -hide_banner -filters | grep tvai_up
    ```
 
 #### B. Setting Up Windows NVIDIA Nodes via WSL2 Shared DRAM (`TopazWindowsWorker`)

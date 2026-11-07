@@ -1,10 +1,13 @@
-# Local / Private Cluster Configs & Environment
+# Local / Private Cluster Configs, OAuth Tokens & Model Weights
 .env
 .env.*
 !.env.example
 *.local.yaml
 *.local.yml
 config/cluster_config.local.yaml
+*.tpz
+auth.tpz
+*.tz
 
 # Python Bytecode & Environments
 __pycache__/
