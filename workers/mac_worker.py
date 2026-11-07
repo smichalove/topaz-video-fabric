@@ -176,6 +176,7 @@ mount | grep -q '{self.ramdisk_mount}' && echo RAMDISK_READY || echo RAMDISK_MIS
             return False, 0, 0.0, 0.0
 
         # Build filter from ModelManager (instances strictly 1 for Apple Silicon)
+        spec = self.model_mgr.get_model_spec(self.cluster_cfg.model.name)
         out_w, out_h, use_crop = self.model_mgr.compute_smart_4k_framing(
             w, h, self.cluster_cfg.model.target_width, self.cluster_cfg.model.target_height, allow_crop=self.cluster_cfg.model.allow_crop
         )
@@ -199,7 +200,55 @@ mount | grep -q '{self.ramdisk_mount}' && echo RAMDISK_READY || echo RAMDISK_MIS
         ffmpeg_bin = self.node_cfg.ffmpeg_path or "/Applications/Topaz Video.app/Contents/MacOS/ffmpeg"
         model_dir = self.node_cfg.model_dir or "/Applications/Topaz Video.app/Contents/Resources/models"
 
-        mac_render_script = f"""
+        if spec.is_neuroserver:
+            ns_filters = self.model_mgr.build_neuroserver_filters_json(
+                self.cluster_cfg.model.name, self.cluster_cfg.model.enhancement_strength
+            ).replace('"', '\\"')
+            ns_w = max(2, (w * 2 // 2) * 2)
+            ns_h = max(2, (h * 2 // 2) * 2)
+            ns_end_frame = max(1, nb_frames - 1) if nb_frames > 0 else 999999
+            m_ns_raw = f"{self.mac_ram_out}/ns_raw.mp4"
+            if use_crop:
+                post_scale = f"scale=w={out_w}:h={out_h}:flags={self.cluster_cfg.model.scaling_filter}:threads=0:force_original_aspect_ratio=increase,crop={out_w}:{out_h},setsar=1:1"
+            else:
+                post_scale = f"scale=w={out_w}:h={out_h}:flags={self.cluster_cfg.model.scaling_filter}:threads=0,setsar=1:1"
+            mac_render_script = f"""
+export PATH="/Applications/Topaz Video.app/Contents/MacOS:$PATH"
+export TVAI_MODEL_DIR="{model_dir}"
+export TVAI_MODEL_DATA_DIR="{model_dir}"
+export TOPAZ_MODEL_STORE="{model_dir}/models"
+export TMPDIR="{self.mac_ram_tmp}"
+cd "/Applications/Topaz Video.app/Contents/MacOS/neuroserver"
+
+"/Applications/Topaz Video.app/Contents/MacOS/neuroserver/neuroserver" --once \\
+  --input-path "{m_in}" --output-path "{m_ns_raw}" \\
+  --start-frame-idx 0 --end-frame-idx {ns_end_frame} --max-gpu-mem 25 \\
+  --filters "{ns_filters}" \\
+  --output-width {ns_w} --output-height {ns_h} --upscale-factor {spec.recommended_scale} \\
+  --ffmpeg-encoding "-c:v h264_videotoolbox -pix_fmt yuv420p -profile:v high -allow_sw 1 -g 30 -b:v 0 -q:v 82 -bf 0" \\
+  2> "{m_stderr}"
+NS_RC=$?
+if [ $NS_RC -ne 0 ] || [ ! -s "{m_ns_raw}" ]; then
+  echo 0
+  exit $NS_RC
+fi
+
+"{ffmpeg_bin}" -hide_banner -nostdin -y \\
+  -i "{m_ns_raw}" -i "{m_in}" -sws_flags spline+accurate_rnd+full_chroma_int \\
+  -vf "{post_scale}" \\
+  -c:v h264_videotoolbox -b:v 35M -profile:v high -pix_fmt yuv420p \\
+  -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv \\
+  -movflags frag_keyframe+empty_moov+delay_moov+use_metadata_tags+write_colr \\
+  -map 0:v:0 -map "1:a:0?" -map_metadata 1 -metadata comment="{meta_comment}" \\
+  -c:a aac -ar 48000 -ac 2 -b:a 192k \\
+  "{m_out}" 2>> "{m_stderr}"
+FF_RC=$?
+rm -f "{m_ns_raw}"
+stat -f %z "{m_out}" 2>/dev/null || echo 0
+exit $FF_RC
+"""
+        else:
+            mac_render_script = f"""
 export TVAI_MODEL_DIR="{model_dir}"
 export TVAI_MODEL_DATA_DIR="{model_dir}"
 export TMPDIR="{self.mac_ram_tmp}"

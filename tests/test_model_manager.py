@@ -133,7 +133,9 @@ def test_starlight_models_and_aliases():
     assert "preblur=" not in filt_sharp
     assert "estimate=" not in filt_sharp
 
-    # Starlight Precise (slp-2.5) filter
+    # Starlight Precise (slp-2.5) filter & neuroserver JSON
     filt_slp = mgr.build_filter("slp-2.5", src_w=1280, src_h=720)
     assert "tvai_up=model=slp-2.5:scale=1:device=0:vram=1:instances=0" in filt_slp
     assert "parameters=" not in filt_slp
+    assert mgr.build_neuroserver_filters_json("slp-2.5") == '[{"model": "slp-26", "softness": 1.0}]'
+    assert mgr.build_neuroserver_filters_json("astrasharp", enhancement_strength=1.3) == '[{"model": "astrasharp", "enhancement_strength": 1.3}]'

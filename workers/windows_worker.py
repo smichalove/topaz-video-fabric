@@ -234,6 +234,7 @@ ffprobe -v error -select_streams v:0 -show_entries stream=width,height,nb_frames
                 src_h=h,
                 enhancement_strength=self.cluster_cfg.model.enhancement_strength,
             )
+            spec = self.model_mgr.get_model_spec(self.cluster_cfg.model.name)
             win_in = f"{self.win_unc_shm}\\active_in.mp4"
             win_out = f"{self.win_unc_shm}\\active_out.mp4"
             win_err = f"{self.win_unc_shm}\\active_stderr.log"
@@ -242,24 +243,65 @@ ffprobe -v error -select_streams v:0 -show_entries stream=width,height,nb_frames
             ffmpeg_bin = self.node_cfg.ffmpeg_path or "C:\\Program Files\\Topaz Labs LLC\\Topaz Video\\ffmpeg.exe"
             model_dir = self.node_cfg.model_dir or "C:\\ProgramData\\Topaz Labs LLC\\Topaz Video\\models"
 
-            ps1_content = (
-                "$ProgressPreference = 'SilentlyContinue'\n"
-                "$ErrorActionPreference = 'SilentlyContinue'\n"
-                f'$env:TVAI_MODEL_DIR = "{model_dir}"\n'
-                f'$env:TVAI_MODEL_DATA_DIR = "{model_dir}"\n'
-                f'$env:TMP = "{self.win_unc_shm}\\hb_tmp"\n'
-                f'$env:TEMP = "{self.win_unc_shm}\\hb_tmp"\n'
-                f'& "{ffmpeg_bin}" -hide_banner -nostdin -y '
-                f'-i "{win_in}" -sws_flags spline+accurate_rnd+full_chroma_int '
-                f'-filter_complex "{tvai_filter}" '
-                f"-c:v h264_nvenc -profile:v high -pix_fmt yuv420p -preset p7 -tune hq -rc vbr -cq 19 -b:v 0 -spatial_aq 1 -rc-lookahead 20 "
-                f"-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv "
-                f"-movflags frag_keyframe+empty_moov+delay_moov+use_metadata_tags+write_colr "
-                f'-map_metadata 0 -map_metadata:s:v 0:s:v -metadata comment="{meta_comment}" '
-                f'-map "0:a:0?" -c:a aac -ar 48000 -ac 2 -b:a 192k '
-                f'"{win_out}" 2> "{win_err}"\n'
-                "exit $LASTEXITCODE\n"
-            )
+            if spec.is_neuroserver:
+                ns_filters = self.model_mgr.build_neuroserver_filters_json(
+                    self.cluster_cfg.model.name, self.cluster_cfg.model.enhancement_strength
+                ).replace('"', '\\"')
+                ns_w = max(2, (w * 2 // 2) * 2)
+                ns_h = max(2, (h * 2 // 2) * 2)
+                ns_end_frame = max(1, nb_frames - 1) if nb_frames > 0 else 999999
+                win_ns_raw = f"{self.win_unc_shm}\\ns_raw.mp4"
+                if use_crop:
+                    post_scale = f"scale=w={out_w}:h={out_h}:flags={self.cluster_cfg.model.scaling_filter}:threads=0:force_original_aspect_ratio=increase,crop={out_w}:{out_h},setsar=1:1"
+                else:
+                    post_scale = f"scale=w={out_w}:h={out_h}:flags={self.cluster_cfg.model.scaling_filter}:threads=0,setsar=1:1"
+                ps1_content = (
+                    "$ProgressPreference = 'SilentlyContinue'\n"
+                    "$ErrorActionPreference = 'SilentlyContinue'\n"
+                    '$env:PATH = "C:\\Program Files\\Topaz Labs LLC\\Topaz Video;" + $env:PATH\n'
+                    f'$env:TVAI_MODEL_DIR = "{model_dir}"\n'
+                    f'$env:TVAI_MODEL_DATA_DIR = "{model_dir}"\n'
+                    f'$env:TOPAZ_MODEL_STORE = "{model_dir}\\models"\n'
+                    f'$env:TMP = "{self.win_unc_shm}\\hb_tmp"\n'
+                    f'$env:TEMP = "{self.win_unc_shm}\\hb_tmp"\n'
+                    'Set-Location "C:\\Program Files\\Topaz Labs LLC\\Topaz Video\\neuroserver"\n'
+                    '& "C:\\Program Files\\Topaz Labs LLC\\Topaz Video\\neuroserver\\neuroserver.exe" --once '
+                    f'--input-path "{win_in}" --output-path "{win_ns_raw}" '
+                    f"--start-frame-idx 0 --end-frame-idx {ns_end_frame} --max-gpu-mem 14 "
+                    f'--filters "{ns_filters}" '
+                    f"--output-width {ns_w} --output-height {ns_h} --upscale-factor {spec.recommended_scale} "
+                    '--ffmpeg-encoding "-c:v h264_nvenc -pix_fmt yuv420p -profile:v high -g 30 -cq 19 -b:v 0 -bf 0" '
+                    f'2> "{win_err}"\n'
+                    f'& "{ffmpeg_bin}" -hide_banner -nostdin -y '
+                    f'-i "{win_ns_raw}" -i "{win_in}" -sws_flags spline+accurate_rnd+full_chroma_int '
+                    f'-vf "{post_scale}" '
+                    f"-c:v h264_nvenc -profile:v high -pix_fmt yuv420p -preset p7 -tune hq -rc vbr -cq 19 -b:v 0 -spatial_aq 1 -rc-lookahead 20 "
+                    f"-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv "
+                    f"-movflags frag_keyframe+empty_moov+delay_moov+use_metadata_tags+write_colr "
+                    f'-map 0:v:0 -map "1:a:0?" -map_metadata 1 -metadata comment="{meta_comment}" '
+                    f"-c:a aac -ar 48000 -ac 2 -b:a 192k "
+                    f'"{win_out}" 2>> "{win_err}"\n'
+                    "exit $LASTEXITCODE\n"
+                )
+            else:
+                ps1_content = (
+                    "$ProgressPreference = 'SilentlyContinue'\n"
+                    "$ErrorActionPreference = 'SilentlyContinue'\n"
+                    f'$env:TVAI_MODEL_DIR = "{model_dir}"\n'
+                    f'$env:TVAI_MODEL_DATA_DIR = "{model_dir}"\n'
+                    f'$env:TMP = "{self.win_unc_shm}\\hb_tmp"\n'
+                    f'$env:TEMP = "{self.win_unc_shm}\\hb_tmp"\n'
+                    f'& "{ffmpeg_bin}" -hide_banner -nostdin -y '
+                    f'-i "{win_in}" -sws_flags spline+accurate_rnd+full_chroma_int '
+                    f'-filter_complex "{tvai_filter}" '
+                    f"-c:v h264_nvenc -profile:v high -pix_fmt yuv420p -preset p7 -tune hq -rc vbr -cq 19 -b:v 0 -spatial_aq 1 -rc-lookahead 20 "
+                    f"-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv "
+                    f"-movflags frag_keyframe+empty_moov+delay_moov+use_metadata_tags+write_colr "
+                    f'-map_metadata 0 -map_metadata:s:v 0:s:v -metadata comment="{meta_comment}" '
+                    f'-map "0:a:0?" -c:a aac -ar 48000 -ac 2 -b:a 192k '
+                    f'"{win_out}" 2> "{win_err}"\n'
+                    "exit $LASTEXITCODE\n"
+                )
             encoded_ps1 = base64.b64encode(ps1_content.encode("utf-16le")).decode("ascii")
 
             t_render = time.time()

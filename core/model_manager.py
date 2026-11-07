@@ -20,6 +20,7 @@ class ModelSpec:
     max_instances_apple: int
     is_starlight: bool = False
     is_neuroserver: bool = False
+    neuroserver_filter_name: str = ""
     supports_linux_deb: bool = True
     supports_enhancement_strength: bool = False
 
@@ -112,6 +113,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         max_instances_apple=0,
         is_starlight=True,
         is_neuroserver=True,
+        neuroserver_filter_name="slp-26",
         supports_linux_deb=False,
         supports_enhancement_strength=False,
     ),
@@ -127,6 +129,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         max_instances_apple=0,
         is_starlight=True,
         is_neuroserver=True,
+        neuroserver_filter_name="astrasharp",
         supports_linux_deb=False,
         supports_enhancement_strength=True,
     ),
@@ -142,6 +145,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         max_instances_apple=0,
         is_starlight=True,
         is_neuroserver=True,
+        neuroserver_filter_name="astrafast",
         supports_linux_deb=False,
         supports_enhancement_strength=True,
     ),
@@ -157,6 +161,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         max_instances_apple=0,
         is_starlight=True,
         is_neuroserver=True,
+        neuroserver_filter_name="astrahq",
         supports_linux_deb=False,
         supports_enhancement_strength=True,
     ),
@@ -172,6 +177,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         max_instances_apple=0,
         is_starlight=True,
         is_neuroserver=True,
+        neuroserver_filter_name="astra",
         supports_linux_deb=False,
         supports_enhancement_strength=True,
     ),
@@ -377,7 +383,22 @@ class ModelManager:
         if "windows" in plat or "wsl" in plat:
             env_vars["TVAI_MODEL_DIR"] = r"C:\ProgramData\Topaz Labs LLC\Topaz Video\models"
             env_vars["TVAI_MODEL_DATA_DIR"] = r"C:\ProgramData\Topaz Labs LLC\Topaz Video\models"
+            env_vars["TOPAZ_MODEL_STORE"] = r"C:\ProgramData\Topaz Labs LLC\Topaz Video\models\models"
         elif "darwin" in plat or "mac" in plat or "apple" in plat:
             env_vars["TVAI_MODEL_DIR"] = "/Applications/Topaz Video.app/Contents/Resources/models"
             env_vars["TVAI_MODEL_DATA_DIR"] = "/Applications/Topaz Video.app/Contents/Resources/models"
+            env_vars["TOPAZ_MODEL_STORE"] = "/Applications/Topaz Video.app/Contents/Resources/models/models"
         return env_vars
+
+    def build_neuroserver_filters_json(
+        self,
+        model_name: Optional[str] = None,
+        enhancement_strength: float = 1.0,
+    ) -> str:
+        """Build the JSON string passed to `neuroserver --filters` for local Project Starlight models."""
+        spec = self.get_model_spec(model_name)
+        ns_model = spec.neuroserver_filter_name or spec.name
+        if ns_model == "slp-26":
+            return f'[{{"model": "{ns_model}", "softness": 1.0}}]'
+        valid_strength = min((0.7, 1.0, 1.3), key=lambda v: abs(v - float(enhancement_strength)))
+        return f'[{{"model": "{ns_model}", "enhancement_strength": {valid_strength}}}]'
