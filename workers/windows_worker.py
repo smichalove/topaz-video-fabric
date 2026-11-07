@@ -213,8 +213,8 @@ ffprobe -v error -select_streams v:0 -show_entries stream=width,height,nb_frames
                 if scp_up.returncode != 0:
                     return False, 0, 0.0, 0.0
 
-            out_w, out_h = self.model_mgr.compute_native_4k_dims(
-                w, h, self.cluster_cfg.model.target_width, self.cluster_cfg.model.target_height
+            out_w, out_h, use_crop = self.model_mgr.compute_smart_4k_framing(
+                w, h, self.cluster_cfg.model.target_width, self.cluster_cfg.model.target_height, allow_crop=self.cluster_cfg.model.allow_crop
             )
             tvai_filter = self.model_mgr.build_filter(
                 model_name=self.cluster_cfg.model.name,
@@ -341,8 +341,8 @@ stat -c %s "{remote_dest}" 2>/dev/null || echo 0
             if scp_res.returncode != 0:
                 return False, 0, 0.0, 0.0
 
-            out_w, out_h = self.model_mgr.compute_native_4k_dims(
-                w, h, self.cluster_cfg.model.target_width, self.cluster_cfg.model.target_height
+            out_w, out_h, use_crop = self.model_mgr.compute_smart_4k_framing(
+                w, h, self.cluster_cfg.model.target_width, self.cluster_cfg.model.target_height, allow_crop=self.cluster_cfg.model.allow_crop
             )
             tvai_filter = self.model_mgr.build_filter(
                 model_name=self.cluster_cfg.model.name,

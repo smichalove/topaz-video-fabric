@@ -122,7 +122,13 @@ print(json.dumps(out))
             if self.is_4k_or_rendered(fn):
                 existing_files.add(fn)
                 continue
-            p_cmd = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"{self.source_dir}/{fn}\" 2>/dev/null || true"
+            p_cmd = (
+                f"export PATH=\"/opt/homebrew/bin:/usr/local/bin:/Applications/Topaz Video.app/Contents/MacOS:$PATH\"; "
+                f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 \"{self.source_dir}/{fn}\" 2>/dev/null || "
+                f"(w=$(mdls -raw -name kMDItemPixelWidth \"{self.source_dir}/{fn}\" 2>/dev/null); "
+                f"h=$(mdls -raw -name kMDItemPixelHeight \"{self.source_dir}/{fn}\" 2>/dev/null); "
+                f"echo \"${{w}},${{h}}\") || true"
+            )
             pr = subprocess.run(
                 ["ssh", "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.archive_host, p_cmd],
                 capture_output=True,
@@ -130,7 +136,7 @@ print(json.dumps(out))
                 timeout=10,
                 check=False,
             )
-            parts = [x.strip() for x in pr.stdout.strip().split(",") if x.strip().isdigit()]
+            parts = [x.strip() for x in pr.stdout.strip().replace("\n", ",").split(",") if x.strip().isdigit()]
             w = int(parts[0]) if len(parts) >= 2 else 640
             h = int(parts[1]) if len(parts) >= 2 else 464
             existing_manifest.append([fn, w, h])
@@ -223,12 +229,9 @@ print(json.dumps(out))
             except Exception as e:
                 logger.warning("QueueManager: failed to parse manifest %s: %s", self.manifest_path, e)
 
-        # Fallback: probe source dir via SSH ffprobe
+        # Fallback: list source dir via SSH ls -1
         logger.info("QueueManager: probing source directory %s on %s...", self.source_dir, self.archive_host)
-        probe_cmd = (
-            f"find '{self.source_dir}' -maxdepth 1 -type f \\( -name '*.mp4' -o -name '*.mkv' -o -name '*.avi' -o -name '*.mov' -o -name '*.webm' \\) "
-            f"-printf '%f\\n' 2>/dev/null || true"
-        )
+        probe_cmd = f"ls -1 '{self.source_dir}' 2>/dev/null || true"
         res = subprocess.run(
             ["ssh", "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.archive_host, probe_cmd],
             capture_output=True,
@@ -238,7 +241,8 @@ print(json.dumps(out))
         )
         for fn in sorted(res.stdout.splitlines()):
             fn = fn.strip()
-            if not fn or self.is_4k_or_rendered(fn):
+            ext = Path(fn).suffix.lower()
+            if not fn or ext not in (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".wmv", ".ts") or self.is_4k_or_rendered(fn):
                 continue
             jobs.append(JobItem(filename=fn, stem=self.sanitize_stem(fn), width=640, height=464, tier="464p"))
         return jobs

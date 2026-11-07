@@ -85,3 +85,26 @@ def test_filter_builder_instance_bounds():
         build_canonical_tvai_filter(model_cfg, instances=4)
     with pytest.raises(ValueError, match="Invalid instances="):
         build_canonical_tvai_filter(model_cfg, instances=-1)
+
+
+def test_smart_4k_framing_auto_crop_optimization():
+    mgr = ModelManager(default_model="iris-3")
+
+    # 1. Near-vertical 9:16 (404x720 and 720x1198) -> Auto-crops to exact 2160x3840 UHD
+    assert mgr.compute_smart_4k_framing(404, 720) == (2160, 3840, True)
+    assert mgr.compute_smart_4k_framing(720, 1198) == (2160, 3840, True)
+    filt_vert = mgr.build_filter("iris-3", scale=2, src_w=720, src_h=1198)
+    assert "force_original_aspect_ratio=increase,crop=2160:3840" in filt_vert
+
+    # 2. Near-landscape 16:9 (832x480) -> Auto-crops to exact 3840x2160 UHD
+    assert mgr.compute_smart_4k_framing(832, 480) == (3840, 2160, True)
+
+    # 3. Exact 9:16 (720x1280) and 1:1 Square (720x720) -> Exact 4K with no crop filter needed
+    assert mgr.compute_smart_4k_framing(720, 1280) == (2160, 3840, False)
+    assert mgr.compute_smart_4k_framing(720, 720) == (2160, 2160, False)
+
+    # 4. Classic 4:3 / 640x464 (>15% aspect delta from 16:9) -> Preserves native uncropped aspect ratio
+    assert mgr.compute_smart_4k_framing(640, 464) == (2980, 2160, False)
+    filt_4_3 = mgr.build_filter("iris-3", scale=2, src_w=640, src_h=464)
+    assert "crop=" not in filt_4_3
+    assert "scale=w=2980:h=2160" in filt_4_3

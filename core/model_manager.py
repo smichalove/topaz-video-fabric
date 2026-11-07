@@ -118,6 +118,57 @@ class ModelManager:
         out_h = max(2, int(round(src_h * scale_factor / 2.0)) * 2)
         return out_w, out_h
 
+    @classmethod
+    def compute_smart_4k_framing(
+        cls,
+        src_w: int = 0,
+        src_h: int = 0,
+        target_w: int = 3840,
+        target_h: int = 2160,
+        allow_crop: bool = False,
+        smart_crop: bool = True,
+        auto_crop_tolerance: float = 0.15,
+    ) -> Tuple[int, int, bool]:
+        """Determine optimal 4K output dimensions and whether center-crop fill should engage.
+
+        Returns (out_w, out_h, use_crop_filter):
+        - When allow_crop=True: forces full-frame 16:9 (3840x2160) or 9:16 (2160x3840) center-crop fill.
+        - When smart_crop=True (default):
+          1. Near-16:9 or Near-9:16 sources (within auto_crop_tolerance=15%, e.g. 404x720, 720x1198, 832x480)
+             automatically snap and center-crop to exact 3840x2160 or 2160x3840 4K UHD.
+          2. Near-1:1 square sources (within 8%, e.g. 720x720, 720x750) snap to 2160x2160 4K square.
+          3. Wide-delta sources (e.g. 4:3 640x480/640x464 or 21:9 cinema where cropping to 16:9 would chop >15%
+             of the subject) preserve their exact uncropped native aspect ratio inside the 4K bounding box.
+        """
+        if src_w <= 0 or src_h <= 0:
+            return target_w, target_h, allow_crop
+
+        max_long = max(target_w, target_h)
+        max_short = min(target_w, target_h)
+        is_landscape = src_w >= src_h
+        std_w, std_h = (max_long, max_short) if is_landscape else (max_short, max_long)
+
+        if allow_crop:
+            return std_w, std_h, True
+
+        if smart_crop:
+            std_ratio = max_long / float(max_short)  # 1.7778 (16:9)
+            src_ratio = max(src_w, src_h) / float(min(src_w, src_h))
+            rel_diff_16_9 = abs(src_ratio - std_ratio) / std_ratio
+            rel_diff_1_1 = abs(src_ratio - 1.0)
+
+            if rel_diff_16_9 <= 0.002:
+                return std_w, std_h, False
+            elif rel_diff_16_9 <= auto_crop_tolerance:
+                return std_w, std_h, True
+            elif rel_diff_1_1 <= 0.002:
+                return max_short, max_short, False
+            elif rel_diff_1_1 <= 0.08:
+                return max_short, max_short, True
+
+        out_w, out_h = cls.compute_native_4k_dims(src_w, src_h, target_w, target_h)
+        return out_w, out_h, False
+
     def build_filter(
         self,
         model_name: Optional[str] = None,
@@ -132,8 +183,9 @@ class ModelManager:
         allow_crop: bool = False,
         src_w: int = 0,
         src_h: int = 0,
+        smart_crop: bool = True,
     ) -> str:
-        """Generate canonical Topaz filter graph (defaulting to native aspect-ratio uncropped output, or center-crop fill when allow_crop=True)."""
+        """Generate canonical Topaz filter graph with smart aspect-ratio & auto-crop optimization."""
         spec = self.get_model_spec(model_name)
         active_scale = scale if scale is not None else spec.recommended_scale
         active_blur = blur if blur is not None else spec.default_blur
@@ -149,21 +201,24 @@ class ModelManager:
             f"device={device_id}:vram=1:instances={instances}"
         )
 
-        if allow_crop:
-            crop_w = target_w
-            crop_h = target_h
-            if src_w > 0 and src_h > 0 and src_h > src_w and target_w > target_h:
-                crop_w, crop_h = target_h, target_w
+        out_w, out_h, use_crop = self.compute_smart_4k_framing(
+            src_w=src_w,
+            src_h=src_h,
+            target_w=target_w,
+            target_h=target_h,
+            allow_crop=allow_crop,
+            smart_crop=smart_crop,
+        )
+
+        if use_crop:
             scaler_params = (
-                f"scale=w={crop_w}:h={crop_h}:flags={scaling_filter}:threads=0:"
-                f"force_original_aspect_ratio=increase,crop={crop_w}:{crop_h}"
+                f"scale=w={out_w}:h={out_h}:flags={scaling_filter}:threads=0:"
+                f"force_original_aspect_ratio=increase,crop={out_w}:{out_h}"
             )
             return f"tvai_up={model_params},{scaler_params},setsar=1:1"
 
-        out_w, out_h = self.compute_native_4k_dims(src_w, src_h, target_w, target_h)
         scaler_params = f"scale=w={out_w}:h={out_h}:flags={scaling_filter}:threads=0"
 
-        # Immutable native aspect ratio preservation: 1:1 square pixel SAR, DAR matching out_w/out_h
         if src_w > 0 and src_h > 0:
             return f"tvai_up={model_params},{scaler_params},setsar=1:1"
         return f"tvai_up={model_params},{scaler_params},setsar=1:1,setdar=16/9"

@@ -175,8 +175,8 @@ mount | grep -q '{self.ramdisk_mount}' && echo MOUNTED || echo NOT_MOUNTED
             return False, 0, 0.0, 0.0
 
         # Build filter from ModelManager (instances strictly 1 for Apple Silicon)
-        out_w, out_h = self.model_mgr.compute_native_4k_dims(
-            w, h, self.cluster_cfg.model.target_width, self.cluster_cfg.model.target_height
+        out_w, out_h, use_crop = self.model_mgr.compute_smart_4k_framing(
+            w, h, self.cluster_cfg.model.target_width, self.cluster_cfg.model.target_height, allow_crop=self.cluster_cfg.model.allow_crop
         )
         tvai_filter = self.model_mgr.build_filter(
             model_name=self.cluster_cfg.model.name,
@@ -236,7 +236,11 @@ stat -f %z "{m_out}" 2>/dev/null || echo 0
         subprocess.run(deliv_cmd, shell=True, check=False)
 
         st_res = subprocess.run(
-            ["ssh", "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.cluster_cfg.storage.archive_host, f"stat -c %s '{remote_dest}' 2>/dev/null || echo 0"],
+            [
+                "ssh", "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+                self.cluster_cfg.storage.archive_host,
+                f"stat -c %s \"{remote_dest}\" 2>/dev/null || stat -f %z \"{remote_dest}\" 2>/dev/null || echo 0",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -251,7 +255,7 @@ stat -f %z "{m_out}" 2>/dev/null || echo 0
             return True, dest_bytes, elapsed, fps
         else:
             self.logger.warning("TopazMacWorker (%s): delivery byte mismatch for '%s' (%dB vs %dB)", self.node_id, final_name, out_bytes, dest_bytes)
-            subprocess.run(["ssh", "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.cluster_cfg.storage.archive_host, f"rm -f '{remote_dest}' 2>/dev/null || true"], check=False)
+            subprocess.run(["ssh", "-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", self.cluster_cfg.storage.archive_host, f"rm -f \"{remote_dest}\" 2>/dev/null || true"], check=False)
             return False, 0, elapsed, 0.0
 
     def cleanup_job(self, job: JobItem) -> None:
