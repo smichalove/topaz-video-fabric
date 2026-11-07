@@ -24,9 +24,10 @@ SOFTWARE.
 
 THIRD-PARTY SOFTWARE & TRADEMARK DISCLAIMER:
 This repository contains an independent, open-source orchestration and distributed
-queue management wrapper ("topaz-video-fabric"). It is NOT affiliated with, endorsed by,
-or sponsored by Topaz Labs LLC. "Topaz Video AI" and "Topaz Labs" are trademarks of
-Topaz Labs LLC.
+queue management wrapper ("topaz-video-fabric"). This work does not represent Topaz Labs
+(https://www.topazlabs.com/) or its affiliates, nor is it affiliated with, endorsed by,
+or sponsored by Topaz Labs LLC. "Topaz Video AI", "Topaz Video", and "Topaz Labs" are
+trademarks of Topaz Labs LLC (https://www.topazlabs.com/).
 
 No proprietary binaries, neural network weights, license keys, or authentication
 tokens from Topaz Labs LLC are included or distributed in this repository. Users

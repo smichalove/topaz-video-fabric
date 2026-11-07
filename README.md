@@ -15,10 +15,10 @@
 > [!IMPORTANT]
 > **Commercial Licensing & Trademark Disclaimer**
 >
-> `topaz-video-fabric` is an independent, open-source distributed queue, RAMDisk staging, and SSH orchestration framework. It is **not** affiliated with, endorsed by, or sponsored by **Topaz Labs LLC**.
+> `topaz-video-fabric` is an independent, open-source distributed queue, RAMDisk staging, and SSH orchestration framework. **This work does not represent [Topaz Labs](https://www.topazlabs.com/) (`https://www.topazlabs.com/`) or its affiliates**, nor is it affiliated with, endorsed by, or sponsored by [Topaz Labs LLC](https://www.topazlabs.com/). "Topaz Video AI", "Topaz Video", and "Topaz Labs" are trademarks of [Topaz Labs LLC](https://www.topazlabs.com/).
 >
 > - **No Proprietary Assets Included:** This repository contains **zero** proprietary binaries, **zero** neural network model weights, and **zero** authentication/license tokens.
-> - **Bring Your Own License (BYOL):** To use this orchestrator, you must hold a valid, active license for **Topaz Video AI** from [Topaz Labs](https://www.topazlabs.com/) and authenticate your installation on the target worker node(s) in compliance with the Topaz Labs End User License Agreement (EULA), including multi-seat or Pro licensing requirements when operating across multiple machines.
+> - **Bring Your Own License (BYOL):** To use this orchestrator, you must hold a valid, active license for **Topaz Video AI** from [Topaz Labs](https://www.topazlabs.com/) and authenticate your installation on the target worker node(s) in compliance with the [Topaz Labs End User License Agreement (EULA)](https://www.topazlabs.com/terms), including multi-seat or Pro licensing requirements when operating across multiple machines.
 
 ---
 
