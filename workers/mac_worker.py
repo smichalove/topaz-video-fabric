@@ -213,8 +213,9 @@ export TMPDIR="{self.mac_ram_tmp}"
   -map_metadata 0 -map_metadata:s:v 0:s:v -metadata comment="{meta_comment}" \\
   -map "0:a:0?" -c:a aac -ar 48000 -ac 2 -b:a 192k \\
   "{m_out}" 2> "{m_stderr}"
-
+FF_RC=$?
 stat -f %z "{m_out}" 2>/dev/null || echo 0
+exit $FF_RC
 """
         t_render = time.time()
         ren_res = self._run_mac_ssh(mac_render_script, timeout=14400)
