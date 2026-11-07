@@ -192,7 +192,7 @@ ffprobe -v error -select_streams v:0 -show_entries stream=width,height,nb_frames
 
                 with raw_shm.open("wb") as f_out:
                     cp_res = subprocess.run(
-                        ["ssh", "-n", "-o", "BatchMode=yes", self.cluster_cfg.storage.archive_host, f"cat -- \"{src_path}\""],
+                        ["ssh", "-n", "-o", "BatchMode=yes", self.cluster_cfg.storage.archive_host, f"cat \"{src_path}\""],
                         stdout=f_out,
                         check=False,
                     )

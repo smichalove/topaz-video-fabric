@@ -77,7 +77,7 @@ mount | grep -q '{self.ramdisk_mount}' && echo MOUNTED || echo NOT_MOUNTED
             p.unlink(missing_ok=True)
 
         cp_res = subprocess.run(
-            ["ssh", "-n", "-o", "BatchMode=yes", self.cluster_cfg.storage.archive_host, f"cat -- \"{src_path}\""],
+            ["ssh", "-n", "-o", "BatchMode=yes", self.cluster_cfg.storage.archive_host, f"cat \"{src_path}\""],
             stdout=raw_shm.open("wb"),
             check=False,
         )

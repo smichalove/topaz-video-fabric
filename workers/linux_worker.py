@@ -46,7 +46,7 @@ class TopazLinuxWorker(BaseWorker):
 
         with raw_shm.open("wb") as f_out:
             cp_res = subprocess.run(
-                ["ssh", "-n", "-o", "BatchMode=yes", self.cluster_cfg.storage.archive_host, f"cat -- \"{src_path}\""],
+                ["ssh", "-n", "-o", "BatchMode=yes", self.cluster_cfg.storage.archive_host, f"cat \"{src_path}\""],
                 stdout=f_out,
                 check=False,
             )
