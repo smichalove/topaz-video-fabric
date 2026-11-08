@@ -22,6 +22,7 @@ class ModelSpec:
     is_neuroserver: bool = False
     neuroserver_filter_name: str = ""
     supports_linux_deb: bool = True
+    supports_macos: bool = True
     supports_enhancement_strength: bool = False
 
 
@@ -120,7 +121,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
     "astrasharp": ModelSpec(
         name="astrasharp",
         display_name="Starlight Sharp (Astra Sharp)",
-        description="Pro temporal diffusion tuned for crisp edge recovery, small faces, and reduced lattice/flicker on low-res inputs (Windows/macOS neuroserver, >=16GB VRAM).",
+        description="Pro temporal diffusion tuned for crisp edge recovery, small faces, and reduced lattice/flicker on low-res inputs (Windows CUDA neuroserver, >=16GB VRAM).",
         supports_scale_2=True,
         recommended_scale=2,
         default_blur=0.0,
@@ -131,12 +132,13 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         is_neuroserver=True,
         neuroserver_filter_name="astrasharp",
         supports_linux_deb=False,
+        supports_macos=False,
         supports_enhancement_strength=True,
     ),
     "astrafast": ModelSpec(
         name="astrafast",
         display_name="Starlight Fast (Astra Fast)",
-        description="Step-distilled temporal latent diffusion for 2x-3x faster diffusion throughput on low-res clips (Windows/macOS neuroserver).",
+        description="Step-distilled temporal latent diffusion for 2x-3x faster diffusion throughput on low-res clips (Windows CUDA neuroserver).",
         supports_scale_2=True,
         recommended_scale=2,
         default_blur=0.0,
@@ -147,12 +149,13 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         is_neuroserver=True,
         neuroserver_filter_name="astrafast",
         supports_linux_deb=False,
+        supports_macos=False,
         supports_enhancement_strength=True,
     ),
     "astrahq": ModelSpec(
         name="astrahq",
         display_name="Starlight HQ (Astra HQ)",
-        description="High-quality temporal diffusion enhancement for degraded archival or generative video (Windows/macOS neuroserver).",
+        description="High-quality temporal diffusion enhancement for degraded archival or generative video (Windows CUDA neuroserver).",
         supports_scale_2=True,
         recommended_scale=2,
         default_blur=0.0,
@@ -163,12 +166,13 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         is_neuroserver=True,
         neuroserver_filter_name="astrahq",
         supports_linux_deb=False,
+        supports_macos=False,
         supports_enhancement_strength=True,
     ),
     "astra": ModelSpec(
         name="astra",
         display_name="Astra / Starlight Creative",
-        description="Generative creative diffusion upscaler that synthesizes natural surface texture and skin detail on AI/CGI video (Windows/macOS neuroserver).",
+        description="Generative creative diffusion upscaler that synthesizes natural surface texture and skin detail on AI/CGI video (Windows CUDA neuroserver).",
         supports_scale_2=True,
         recommended_scale=2,
         default_blur=0.0,
@@ -179,6 +183,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         is_neuroserver=True,
         neuroserver_filter_name="astra",
         supports_linux_deb=False,
+        supports_macos=False,
         supports_enhancement_strength=True,
     ),
     "slm-1": ModelSpec(

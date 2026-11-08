@@ -87,9 +87,17 @@ class BaseWorker(abc.ABC, threading.Thread):
                 continue
 
             model_spec = ModelManager(self.cluster_cfg.model.name).get_model_spec()
-            if self.node_cfg.accelerator.lower() == "linux_cuda" and not model_spec.supports_linux_deb:
+            accel_lower = self.node_cfg.accelerator.lower()
+            if accel_lower == "linux_cuda" and not model_spec.supports_linux_deb:
                 self.logger.warning(
                     "[%s] Local Starlight model '%s' is not supported on native Linux .deb distros (Windows Virtualization with PCIe GPU passthrough via TopazWindowsWorker or macOS TopazMacWorker is required). Skipping Linux worker.",
+                    self.node_id,
+                    model_spec.name,
+                )
+                break
+            if ("ane" in accel_lower or "apple" in accel_lower or "metal" in accel_lower) and not model_spec.supports_macos:
+                self.logger.warning(
+                    "[%s] Local Starlight model '%s' requires NVIDIA CUDA/cuDNN (sdpa_cudnn) on Windows and is not supported on macOS Apple Silicon (use 'slp-2.5' or 'slm-1' on macOS). Skipping macOS worker.",
                     self.node_id,
                     model_spec.name,
                 )

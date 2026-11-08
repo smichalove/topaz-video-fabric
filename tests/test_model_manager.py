@@ -117,7 +117,12 @@ def test_starlight_models_and_aliases():
     assert spec_sharp.is_starlight is True
     assert spec_sharp.is_neuroserver is True
     assert spec_sharp.supports_linux_deb is False
+    assert spec_sharp.supports_macos is False
     assert spec_sharp.supports_enhancement_strength is True
+
+    spec_slp = mgr.get_model_spec("slp-2.5")
+    assert spec_slp.supports_macos is True
+    assert spec_slp.supports_linux_deb is False
 
     # Verify all Starlight aliases resolve cleanly
     assert ModelManager.resolve_model_name("starlight") == "slp-2.5"

@@ -258,22 +258,23 @@ On Windows workstations with high-end NVIDIA GPUs—or on **Linux bare-metal GPU
 
 2. **Mode 2 — Linux Bare-Metal GPU Servers via Windows Virtualization (`vm_temp_dir` — Required for Local Starlight on Linux Hosts):**
    - **Why Windows Virtualization is Required on Linux for Local Starlight:** Topaz Labs does **not** ship `neuroserver` or local **Project Starlight** models (`slp-2.5` / `slp26`, `astrasharp`, `astrafast`, `astrahq`, `astra`, `slm-1`) for native Linux `.deb` distributions (`TopazVideoAIBETA`).
+   - Furthermore, the Astra-family local diffusion models (`astrasharp`, `astrafast`, `astrahq`, `astra`) rely on NVIDIA CUDA/cuDNN `sdpa_cudnn` attention kernels (`models.slmini_local` / `lean_wan`) and are distributed **exclusively for Windows NVIDIA GPUs (`>=16 GB` VRAM)**—whereas `slp-2.5` (`slp26` Starlight Precise) and `slm-1` (`Starlight Mini`) support both **Windows (NVIDIA CUDA)** and **macOS (Apple Silicon MPS / CoreML)**.
    - To run local Starlight temporal diffusion models on a Linux GPU server (such as a headless `Tesla V100 32GB` or `RTX 4090/5080` Linux host), attach the NVIDIA GPU via **VFIO PCIe passthrough to a Windows Server / Windows 11 KVM/QEMU VM** with an encrypted scratch disk (`D:\Temp`), install Windows Topaz Video 7.x+, and configure `TopazWindowsWorker` with `vm_temp_dir: "D:/Temp"`.
 
 ### Supported Models & Local Project Starlight Dictionary
 
-| CLI `--model` ID | Friendly CLI Aliases | Official Topaz Name | Engine / Backend | Native Linux `.deb`? | Primary Use Case & Hardware Notes |
+| CLI `--model` ID | Friendly CLI Aliases | Official Topaz Name | Engine / Execution Binary | Supported OS Platforms | Primary Use Case & Hardware Notes |
 | :--- | :--- | :--- | :--- | :---: | :--- |
-| **`iris-3`** *(Default)* | `iris`, `iris3` | **Iris MQ v3** | TensorRT / Apple ANE | Yes | Fast face restoration, denoise, and detail recovery (`scale=2` engages native ANE on macOS & `2.6x` speedup on NVIDIA). |
-| **`rhea-1`** | `rhea`, `rhea1` | **Rhea v1** | TensorRT / CoreML | Yes | 4x generative detail reconstruction for SD/HD sources. |
-| **`prob-4`** | `proteus`, `prob4` | **Proteus v4** | TensorRT / CoreML | Yes | General-purpose enhancement for clean or lightly compressed video. |
-| **`nyx-3`** | `nyx`, `nyx3` | **Nyx v3** | TensorRT / CoreML | Yes | Temporal denoise for high-ISO footage. |
-| **`astrasharp`** | `starlight-sharp`, `astra-sharp` | **Starlight Sharp (Pro)** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | Crisp edge & small-face recovery with reduced lattice/flicker (`>=16GB VRAM` or Apple Silicon Max/Ultra; supports `--starlight-strength 0.7\|1.0\|1.3`). |
-| **`slp-2.5`** | `starlight`, `starlight-precise`, `slp26` | **Starlight Precise v2.5** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | Multi-frame latent diffusion preserving geometry/identity (`scale=1` diffusion + Lanczos 4K). |
-| **`astrafast`** | `starlight-fast`, `astra-fast` | **Starlight Fast** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | Step-distilled temporal diffusion for `2x-3x` faster local Starlight throughput. |
-| **`astrahq`** | `starlight-hq`, `astra-hq` | **Starlight HQ** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | High-quality temporal diffusion restoration. |
-| **`astra`** | `starlight-creative` | **Astra / Starlight Creative** | `neuroserver` Diffusion | **No** *(Win / Win-VM / macOS)* | Generative creative upscaler that synthesizes natural surface texture on AI/CGI video. |
-| **`slm-1`** | `starlight-mini`, `slm` | **Starlight Mini v1** | ONNX / CoreML / DirectML | **No** *(Win / Win-VM / macOS)* | Consumer local diffusion model for low-resolution inputs. |
+| **`iris-3`** *(Default)* | `iris`, `iris3` | **Iris MQ v3** | `ffmpeg` (`tvai_up` TensorRT / Apple ANE) | Linux `.deb`, Windows, macOS | Fast face restoration, denoise, and detail recovery (`scale=2` engages native ANE on macOS & `2.6x` speedup on NVIDIA). |
+| **`rhea-1`** | `rhea`, `rhea1` | **Rhea v1** | `ffmpeg` (`tvai_up` TensorRT / CoreML) | Linux `.deb`, Windows, macOS | 4x generative detail reconstruction for SD/HD sources. |
+| **`prob-4`** | `proteus`, `prob4` | **Proteus v4** | `ffmpeg` (`tvai_up` TensorRT / CoreML) | Linux `.deb`, Windows, macOS | General-purpose enhancement for clean or lightly compressed video. |
+| **`nyx-3`** | `nyx`, `nyx3` | **Nyx v3** | `ffmpeg` (`tvai_up` TensorRT / CoreML) | Linux `.deb`, Windows, macOS | Temporal denoise for high-ISO footage. |
+| **`astrasharp`** | `starlight-sharp`, `astra-sharp` | **Starlight Sharp (Pro)** | `neuroserver.exe --once` (`sdpa_cudnn` Diffusion) | **Windows / Win KVM-VFIO VM** *(NVIDIA `>=16GB` VRAM)* | Crisp edge & small-face recovery with reduced lattice/flicker (`2x` diffusion + Lanczos 4K; supports `--starlight-strength 0.7\|1.0\|1.3`). |
+| **`slp-2.5`** | `starlight`, `starlight-precise`, `slp26` | **Starlight Precise v2.5** | `neuroserver --once` (CUDA BF16 / Apple MPS) | **Windows, Win KVM-VFIO VM, macOS** | Multi-frame latent diffusion (`slp-26`) preserving geometry/identity (`scale=1` temporal diffusion + Lanczos 4K). |
+| **`astrafast`** | `starlight-fast`, `astra-fast` | **Starlight Fast** | `neuroserver.exe --once` (`sdpa_cudnn` Diffusion) | **Windows / Win KVM-VFIO VM** *(NVIDIA `>=16GB` VRAM)* | Step-distilled temporal diffusion for `2x-3x` faster local Starlight throughput. |
+| **`astrahq`** | `starlight-hq`, `astra-hq` | **Starlight HQ** | `neuroserver.exe --once` (`sdpa_cudnn` Diffusion) | **Windows / Win KVM-VFIO VM** *(NVIDIA `>=16GB` VRAM)* | High-quality temporal diffusion restoration (`supports --starlight-strength 0.7\|1.0\|1.3`). |
+| **`astra`** | `starlight-creative` | **Astra / Starlight Creative** | `neuroserver.exe --once` (`sdpa_cudnn` Diffusion) | **Windows / Win KVM-VFIO VM** *(NVIDIA `>=16GB` VRAM)* | Generative creative upscaler that synthesizes natural surface texture on AI/CGI video. |
+| **`slm-1`** | `starlight-mini`, `slm` | **Starlight Mini v1** | `ffmpeg` (`tvai_up` ONNX / CoreML / DirectML) | **Windows, Win KVM-VFIO VM, macOS** | Consumer local diffusion model for low-resolution inputs (`>=8GB` NVIDIA VRAM or `>=20GB` Apple Unified Memory). |
 
 > [!TIP]
 > **Dual-Queue Saturation on Flagship GPUs (e.g., RTX 5080 / 4090):**

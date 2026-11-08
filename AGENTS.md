@@ -70,8 +70,11 @@ Confirm every enabled node reports `PASS` (or `WARN (DEMAND)` for unmounted macO
    - **NVIDIA (`cuda`, `linux_cuda`):** `instances` may be configured between `1` and `3` depending on VRAM capacity (`16 GB - 32 GB`) for TensorRT GAN models (`iris-3`, `rhea-1`, `prob-4`, `nyx-3`).
    - **Iris-3 `scale=2`:** Default `iris-3` 4K upscaling to `scale=2` followed by `scale=w=<out_w>:h=<out_h>:flags=lanczos:threads=0,setsar=1:1` (unlocks native `-2x-13-ane-mlp` ANE weights on macOS and boosts NVIDIA TensorRT throughput by `2.6x`).
    - **Local Project Starlight Models (`slp-2.5` / `starlight`, `astrasharp` / `starlight-sharp`, `astrafast` / `starlight-fast`, `astrahq` / `starlight-hq`, `astra` / `starlight-creative`, `slm-1` / `starlight-mini`):**
-     - Local Starlight (`neuroserver`) models are **not** supported on native Linux `.deb` distributions (`TopazVideoAIBETA`).
-     - To run local Starlight models on a Linux GPU server, **Windows Virtualization (KVM/QEMU with PCIe VFIO GPU passthrough)** is required and orchestrated via `TopazWindowsWorker` (`vm_temp_dir`), or run on macOS Apple Silicon (`TopazMacWorker`) / native Windows (`TopazWindowsWorker`). Native `linux_cuda` workers automatically detect `supports_linux_deb == False` and skip Starlight jobs cleanly.
+     - **Dual Execution Engines:** Models with `is_neuroserver=True` (`slp-2.5` / `slp-26`, `astrasharp`, `astrafast`, `astrahq`, `astra`) execute via the standalone `neuroserver --once` / `neuroserver.exe --once` binary (`ModelManager.build_neuroserver_filters_json`) followed by an `ffmpeg` 4K Lanczos scaling & audio remux pass. `slm-1` (`Starlight Mini`) executes inside `ffmpeg -filter_complex "tvai_up=model=slm-1:..."`.
+     - **Platform Compatibility Matrix:**
+       - **Linux `.deb` (`TopazVideoAIBETA`):** Does **not** support any local Starlight models (`supports_linux_deb == False`). To run local Starlight on a Linux GPU server, **Windows Virtualization (KVM/QEMU with PCIe VFIO GPU passthrough)** is required and orchestrated via `TopazWindowsWorker` (`vm_temp_dir`).
+       - **macOS Apple Silicon (`TopazMacWorker`):** Supports **`slp-2.5`** (`slp26` via `models.slp25mac` on Apple MPS) and **`slm-1`** (`Starlight Mini` via CoreML). The Astra-family models (`astrasharp`, `astrafast`, `astrahq`, `astra`) have `supports_macos == False` because `models.slmini_local` requires Windows NVIDIA CUDA/cuDNN `sdpa_cudnn` kernels (`>=16 GB` VRAM).
+       - **Windows NVIDIA CUDA (`TopazWindowsWorker`):** Supports the full local Project Starlight suite (`slp-2.5`, `astrasharp`, `astrafast`, `astrahq`, `astra`, and `slm-1`).
 
 ---
 
