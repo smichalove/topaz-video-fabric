@@ -272,6 +272,10 @@ ffprobe -v error -select_streams v:0 -show_entries stream=width,height,nb_frames
                     f"--output-width {ns_w} --output-height {ns_h} --upscale-factor {spec.recommended_scale} "
                     '--ffmpeg-encoding "-c:v h264_nvenc -pix_fmt yuv420p -profile:v high -g 30 -cq 19 -b:v 0 -bf 0" '
                     f'2> "{win_err}"\n'
+                    f'if (-not (Test-Path "{win_ns_raw}")) {{\n'
+                    f'    $tmpItem = Get-ChildItem "{win_ns_raw}.temp.*.mp4" -ErrorAction SilentlyContinue | Select-Object -First 1\n'
+                    f'    if ($tmpItem -and $tmpItem.Length -gt 65536) {{ Move-Item -Force $tmpItem.FullName "{win_ns_raw}" }}\n'
+                    f'}}\n'
                     f'& "{ffmpeg_bin}" -hide_banner -nostdin -y '
                     f'-i "{win_ns_raw}" -i "{win_in}" -sws_flags spline+accurate_rnd+full_chroma_int '
                     f'-vf "{post_scale}" '

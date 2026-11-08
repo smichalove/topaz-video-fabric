@@ -228,6 +228,13 @@ cd "/Applications/Topaz Video.app/Contents/MacOS/neuroserver"
   --ffmpeg-encoding "-c:v h264_videotoolbox -pix_fmt yuv420p -profile:v high -allow_sw 1 -g 30 -b:v 0 -q:v 82 -bf 0" \\
   2> "{m_stderr}"
 NS_RC=$?
+if [ ! -s "{m_ns_raw}" ]; then
+  TEMP_NS=$(ls "{m_ns_raw}".temp.*.mp4 2>/dev/null | head -n 1)
+  if [ -n "$TEMP_NS" ] && [ -s "$TEMP_NS" ]; then
+    mv -f "$TEMP_NS" "{m_ns_raw}"
+    NS_RC=0
+  fi
+fi
 if [ $NS_RC -ne 0 ] || [ ! -s "{m_ns_raw}" ]; then
   echo 0
   exit $NS_RC
